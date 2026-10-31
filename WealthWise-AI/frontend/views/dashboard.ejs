@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WealthWise AI</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+    <aside class="sidebar">
+        <h2>WealthWise<span>AI</span></h2>
+        <p>WEALTH MANAGEMENT</p>
+
+        <nav>
+            <a href="/">Dashboard</a>
+            <a href="#portfolio">Portfolio</a>
+            <a href="#documents">Documents</a>
+            <a href="#assistant">AI Assistant</a>
+            <form action="/logout" method="POST">
+                <button type="submit" class="logout-btn">Logout</button>
+            </form>
+        </nav>
+
+        <div class="sidebar-bottom">Demo Account</div>
+    </aside>
+
+    <main class="main">
+        <header>
+            <div>
+                <h1>Portfolio Overview</h1>
+                
+                <p>Your intelligent wealth management workspace</p>
+            </div>
+            <span class="status">● Demo Mode</span>
+        </header>
+
+        <% if (error) { %>
+            <p class="error"><%= error %></p>
+        <% } %>
+
+        <% if (analytics) { %>
+
+        <section class="stats">
+            <div class="card">
+                <p>Total Portfolio Value</p>
+                <h2>₹<%= analytics.total_value.toLocaleString("en-IN") %></h2>
+            </div>
+
+            <div class="card">
+                <p>Largest Holding</p>
+                <h2><%= analytics.largest_holding.name %></h2>
+                <small><%= analytics.largest_holding.weight_percentage %>% of portfolio</small>
+            </div>
+
+            <div class="card">
+                <p>Liquidity</p>
+                <h2><%= analytics.liquidity.percentage %>%</h2>
+                <small>Cash and liquid allocation</small>
+            </div>
+
+            <div class="card">
+                <p>Holdings</p>
+                <h2><%= analytics.holdings.length %></h2>
+                <small>Across asset classes</small>
+            </div>
+        </section>
+
+        <section class="panel" id="portfolio">
+            <h2>Asset Allocation</h2>
+
+            <% analytics.asset_allocation.forEach(item => { %>
+                <div class="allocation">
+                    <div class="allocation-label">
+                        <span><%= item.asset_class %></span>
+                        <strong><%= item.percentage %>%</strong>
+                    </div>
+                    <div class="progress">
+                        <div style="width: <%= item.percentage %>%"></div>
+                    </div>
+                </div>
+            <% }) %>
+        </section>
+        <section class="charts-grid">
+    <div class="panel">
+        <h2>Asset Distribution</h2>
+        <canvas id="allocationChart"></canvas>
+    </div>
+
+    <div class="panel">
+        <h2>Holding-wise Investment</h2>
+        <canvas id="holdingsChart"></canvas>
+    </div>
+</section>
+
+        <section class="panel">
+            <h2>Portfolio Holdings</h2>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Holding</th>
+                            <th>Asset Class</th>
+                            <th>Value</th>
+                            <th>Weight</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% analytics.holdings.forEach(item => { %>
+                            <tr>
+                                <td><%= item.name %></td>
+                                <td><%= item.asset_class %></td>
+                                <td>₹<%= item.value.toLocaleString("en-IN") %></td>
+                                <td><%= item.weight_percentage %>%</td>
+                            </tr>
+                        <% }) %>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <% if (risk) { %>
+<section class="panel" id="risk-analysis">
+    <h2>Portfolio Risk Intelligence</h2>
+
+    <div class="stats">
+        <div class="card">
+            <p>HHI Concentration</p>
+            <h2><%= risk.hhi %></h2>
+            <small>Normalized: <%= risk.normalized_hhi %></small>
+        </div>
+
+        <div class="card">
+            <p>Top 3 Holdings</p>
+            <h2><%= risk.top_three_concentration %>%</h2>
+        </div>
+
+        <div class="card">
+            <p>Liquidity</p>
+            <h2><%= risk.liquidity_percentage %>%</h2>
+        </div>
+
+        <div class="card">
+            <p>Risk Flags</p>
+            <h2><%= risk.risk_flags.length %></h2>
+        </div>
+    </div>
+
+    <h3>Risk Observations</h3>
+    <div class="ai-explanation">
+    <h3>AI Risk Explanation</h3>
+
+    <p>Understand your portfolio metrics using AI.</p>
+
+    <button id="explain-risk-btn">
+        Explain Portfolio Risk
+    </button>
+
+    <div id="risk-explanation-result"></div>
+</div>
+
+    <% if (risk.risk_flags.length === 0) { %>
+        <div class="risk">
+            No configured risk thresholds were breached.
+        </div>
+    <% } %>
+
+    <% risk.risk_flags.forEach(flag => { %>
+        <div class="risk">
+            <strong><%= flag.severity %>: <%= flag.type %></strong>
+            <p><%= flag.message %></p>
+        </div>
+    <% }) %>
+
+    <p><small><%= risk.interpretation %></small></p>
+</section>
+<% } %>
+
+        <section class="panel">
+
+            <% if (analytics.risk_flags.length === 0) { %>
+                <p>No threshold-based risk flags triggered by the current demo rules.</p>
+            <% } %>
+
+            <% analytics.risk_flags.forEach(flag => { %>
+                <div class="risk">
+                    <strong><%= flag.type %></strong>
+                    <p><%= flag.message %></p>
+                </div>
+            <% }) %>
+
+            <small><%= analytics.disclaimer %></small>
+        </section>
+
+        <% } %>
+
+        <section class="panel" id="documents">
+            <h2>Upload Financial Document</h2>
+            <form action="/upload" method="POST" enctype="multipart/form-data">
+                <input type="file" name="file" accept=".pdf" required>
+                <button type="submit">Upload PDF</button>
+            </form>
+        </section>
+
+        <section class="panel" id="assistant">
+            <h2>WealthWise AI Assistant</h2>
+            <p>Ask questions about your uploaded financial documents.</p>
+            <button id="load-history-btn" type="button">
+                View Previous Conversations
+            </button>
+            <div id="chat-history"></div>
+            <div id="chat-box"></div>
+
+            <form id="chat-form">
+                <input
+                    type="text"
+                    id="question"
+                    placeholder="Ask about your portfolio..."
+                    required
+                >
+                <button type="submit">Ask AI</button>
+            </form>
+        </section>
+        
+        <footer>
+            WealthWise AI · Synthetic demonstration data · Not investment advice
+        </footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <% if (analytics) { %>
+<script>
+    const allocationData = <%- JSON.stringify(analytics.asset_allocation) %>;
+    const holdingsData = <%- JSON.stringify(analytics.holdings) %>;
+
+    new Chart(document.getElementById("allocationChart"), {
+        type: "doughnut",
+        data: {
+            labels: allocationData.map(x => x.asset_class),
+            datasets: [{
+                data: allocationData.map(x => x.value)
+            }]
+        },
+        options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        cutout: "65%",
+        plugins: {
+            legend: { position: "bottom" }
+        }
+    }
+    });
+
+    new Chart(document.getElementById("holdingsChart"), {
+        type: "bar",
+        data: {
+            labels: holdingsData.map(x => x.name),
+            datasets: [{
+                label: "Investment Value (₹)",
+                data: holdingsData.map(x => x.value)
+            }]
+        },
+        options: {
+            responsive: true,
+            indexAxis: "y",
+            plugins: {
+                legend: { display: false }
+                
+            },
+            tooltip: {
+            callbacks: {
+                label: function(context) {
+                    return "₹" + context.raw.toLocaleString("en-IN");
+                }
+            }
+        }
+        }
+    });
+
+
+</script>
+<% } %>
+
+    <script src="/app.js"></script>
+    
+</body>
+</html>

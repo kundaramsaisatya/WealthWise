@@ -1,0 +1,50 @@
+
+{
+  "client_id": "DEMO-CLIENT-001",
+  "currency": "INR",
+  "report_date": "2026-10-31",
+  "holdings": [
+    {
+      "name": "Nifty 50 Index Fund",
+      "asset_class": "Equity",
+      "value": 250000,
+      "page": 1
+    },
+    {
+      "name": "Broad Market Equity Fund",
+      "asset_class": "Equity",
+      "value": 150000,
+      "page": 1
+    },
+    {
+      "name": "Short Duration Debt Fund",
+      "asset_class": "Debt",
+      "value": 180000,
+      "page": 1
+    },
+    {
+      "name": "Government Securities Fund",
+      "asset_class": "Debt",
+      "value": 120000,
+      "page": 1
+    },
+    {
+      "name": "Gold ETF",
+      "asset_class": "Gold",
+      "value": 100000,
+      "page": 1
+    },
+    {
+      "name": "Liquid Fund",
+      "asset_class": "Cash / Liquid",
+      "value": 120000,
+      "page": 1
+    },
+    {
+      "name": "Bank balance",
+      "asset_class": "Cash / Liquid",
+      "value": 80000,
+      "page": 1
+    }
+  ]
+}

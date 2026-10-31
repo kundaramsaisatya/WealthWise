@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WealthWise AI | Register</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="auth-container">
+        <form action="/register" method="POST" class="auth-card">
+            <h1>WealthWise AI</h1>
+            <p>Create your wealth dashboard account</p>
+
+            <label>Full Name</label>
+            <input type="text" name="name" required>
+
+            <label>Email</label>
+            <input type="email" name="email" required>
+
+            <label>Password</label>
+            <input type="password" name="password" minlength="8" required>
+
+            <button type="submit">Create Account</button>
+
+            <p>Already registered? <a href="/login">Login</a></p>
+        </form>
+    </div>
+</body>
+</html>
