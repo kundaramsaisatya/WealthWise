@@ -1,3 +1,4 @@
+
 require("dotenv").config({
     path: require("path").join(__dirname, "../.env")
 });
@@ -16,7 +17,9 @@ const mongoose = require("mongoose");
 const crypto = require("crypto");
 const fs = require("fs");
 const Portfolio = require("./models/Portfolio");
+const Document = require("./models/Document");
 const connectDB = require("./config/database");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const AI_URL = process.env.AI_SERVICE_URL || "http://localhost:8000";
@@ -29,6 +32,11 @@ app.use((req, res, next) => {
     }
 
     sessionMiddleware(req, res, next);
+});
+
+app.use((req, res, next) => {
+    res.locals.user = req.session.user || null;
+    next();
 });
 
 const upload = multer({
@@ -44,14 +52,320 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 
+// --------------------------------------------------
+// SHARED HELPERS
+// --------------------------------------------------
 
+function getServiceHeaders() {
+    return {
+        "X-Service-Secret": process.env.AI_SERVICE_SECRET
+    };
+}
+
+function isValidNumber(value) {
+    return (
+        typeof value === "number" &&
+        Number.isFinite(value)
+    );
+}
+
+function normalizeIdentifier(value) {
+    if (value === null || value === undefined) {
+        return "";
+    }
+
+    return String(value)
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "");
+}
+
+function normalizeName(value) {
+    return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ");
+}
+
+function isDemoDocument(snapshot) {
+    if (snapshot.isDemo === true) {
+        return true;
+    }
+
+    return /demo|sample|illustrative/i.test(
+        snapshot.documentName || ""
+    );
+}
+
+function getSnapshotDate(snapshot) {
+    // Only a statement/report date can establish valuation recency.
+    // Upload time is not a substitute for the statement date.
+
+    if (!snapshot.reportDate) {
+        return new Date(0);
+    }
+
+    const parsed = new Date(snapshot.reportDate);
+
+    return Number.isNaN(parsed.getTime())
+        ? new Date(0)
+        : parsed;
+}
+
+function getHoldingKey(holding, snapshot) {
+    const isin = normalizeIdentifier(holding.isin);
+    const folio = normalizeIdentifier(holding.folioNumber);
+    const name = normalizeName(holding.name);
+
+    // Same security in the same folio.
+    if (isin && folio) {
+        return `ISIN:${isin}|FOLIO:${folio}`;
+    }
+
+    // Conservative fallback when ISIN is unavailable.
+    if (folio && name) {
+        return `FOLIO:${folio}|NAME:${name}`;
+    }
+
+    // Never merge using ISIN alone or name alone.
+    return `DOCUMENT:${snapshot._id}|HOLDING:${holding._id || crypto.randomUUID()}`;
+}
+
+
+// --------------------------------------------------
+// PORTFOLIO CONSOLIDATION
+// --------------------------------------------------
+
+function consolidatePortfolios(allPortfolios) {
+
+    const actualSnapshots = allPortfolios
+        .filter(snapshot => !isDemoDocument(snapshot));
+
+    const groups = new Map();
+
+    for (const snapshot of actualSnapshots) {
+
+        for (const holding of snapshot.holdings || []) {
+
+            const key = getHoldingKey(holding, snapshot);
+
+            if (!groups.has(key)) {
+                groups.set(key, []);
+            }
+
+            groups.get(key).push({
+                ...holding,
+                documentId: snapshot.documentId,
+                documentName: snapshot.documentName,
+                documentType: snapshot.documentType,
+                reportDate: snapshot.reportDate || null,
+                snapshotCreatedAt: snapshot.createdAt,
+                isDemo: false
+            });
+        }
+    }
+
+    const consolidatedHoldings = [];
+    const duplicateRecords = [];
+    const conflicts = [];
+
+    for (const [key, records] of groups.entries()) {
+
+        const datedRecords = records
+            .filter(record =>
+                record.reportDate &&
+                !Number.isNaN(new Date(record.reportDate).getTime())
+            )
+            .sort((a, b) =>
+                new Date(b.reportDate) - new Date(a.reportDate)
+            );
+
+        const distinctValues = [
+            ...new Set(
+                records
+                    .map(record => record.currentValue)
+                    .filter(isValidNumber)
+            )
+        ];
+
+        const allRecordsHaveDates = records.every(
+            record =>
+                record.reportDate &&
+                !Number.isNaN(new Date(record.reportDate).getTime())
+        );
+
+        const distinctReportDates = new Set(
+            datedRecords.map(record =>
+                new Date(record.reportDate).getTime()
+            )
+        );
+
+        // Different values on different reliable statement dates:
+        // use the latest statement date.
+        //
+        // Missing dates or same-date disagreements:
+        // require verification.
+
+        const hasConflict =
+            distinctValues.length > 1 &&
+            !(allRecordsHaveDates && distinctReportDates.size > 1);
+
+        let selected;
+
+        if (datedRecords.length > 0) {
+            selected = datedRecords[0];
+        } else {
+            selected = records[0];
+        }
+
+        const consolidated = {
+            ...selected,
+            holdingKey: key,
+            sourceDocuments: [
+                ...new Set(
+                    records
+                        .map(record => record.documentName)
+                        .filter(Boolean)
+                )
+            ],
+            sourceRecordCount: records.length,
+            hasConflict,
+            conflictingValues: hasConflict ? distinctValues : []
+        };
+
+        consolidatedHoldings.push(consolidated);
+
+        if (records.length > 1) {
+            duplicateRecords.push({
+                key,
+                name: selected.name,
+                selectedDocument: selected.documentName || null,
+                records
+            });
+        }
+
+        if (hasConflict) {
+            conflicts.push({
+                key,
+                name: selected.name,
+                values: distinctValues,
+                selectedDocument: selected.documentName || null,
+                message: allRecordsHaveDates
+                    ? "Different values were reported for the same statement date. Verification is required."
+                    : "Different values were found and at least one statement date is unavailable. Verification is required."
+            });
+        }
+    }
+
+    // Only verified current values enter analytics.
+
+    const verifiedHoldings = consolidatedHoldings.filter(
+        holding =>
+            isValidNumber(holding.currentValue) &&
+            holding.currentValue >= 0 &&
+            !holding.hasConflict
+    );
+
+    const totalValue = verifiedHoldings.reduce(
+        (sum, holding) => sum + holding.currentValue,
+        0
+    );
+
+    const unverifiedHoldings = consolidatedHoldings.filter(
+        holding =>
+            !isValidNumber(holding.currentValue) ||
+            holding.currentValue < 0 ||
+            holding.hasConflict
+    );
+
+    const currency = actualSnapshots[0]?.currency || "INR";
+
+    const reliableDates = actualSnapshots
+        .map(snapshot => getSnapshotDate(snapshot))
+        .filter(date => date.getTime() > 0)
+        .sort((a, b) => b - a);
+
+    return {
+        portfolio: {
+            clientId: actualSnapshots[0]?.clientId || null,
+            currency,
+
+            // Null means the complete portfolio value is not verified.
+            totalValue: unverifiedHoldings.length === 0
+                ? Number(totalValue.toFixed(2))
+                : null,
+
+            verifiedTotalValue: Number(totalValue.toFixed(2)),
+            isPartial: unverifiedHoldings.length > 0,
+            unverifiedHoldingCount: unverifiedHoldings.length,
+
+            holdings: consolidatedHoldings,
+
+            reportDate: reliableDates[0] || null,
+
+            documentName: "Consolidated Portfolio",
+            documentType: "consolidated",
+            isDemo: false,
+
+            sourceDocumentCount: actualSnapshots.length,
+            holdingCount: consolidatedHoldings.length,
+            verifiedHoldingCount: verifiedHoldings.length,
+            conflictCount: conflicts.length
+        },
+
+        duplicateRecords,
+        conflicts,
+        actualSnapshots
+    };
+}
+
+
+// --------------------------------------------------
+// ANALYTICS PAYLOAD
+// --------------------------------------------------
+
+function createAnalyticsPayload(clientId, portfolio) {
+
+    const holdings = (portfolio.holdings || [])
+        .filter(holding =>
+            isValidNumber(holding.currentValue) &&
+            holding.currentValue >= 0 &&
+            !holding.hasConflict
+        )
+        .map(item => ({
+            name: item.name,
+            asset_class: item.assetClass || "Other",
+            sub_category: item.subCategory ?? null,
+            isin: item.isin ?? null,
+            folio_number: item.folioNumber ?? null,
+            invested_value: item.investedValue ?? null,
+            current_value: item.currentValue,
+            quantity: item.quantity ?? null,
+            page: item.page ?? null
+        }));
+
+    return {
+        client_id: clientId,
+        currency: portfolio.currency || "INR",
+        holdings
+    };
+}
+
+
+// --------------------------------------------------
 // REGISTER
+// --------------------------------------------------
+
 app.post("/register", async (req, res) => {
+
     try {
         const { name, email, password } = req.body;
 
         if (!name || !email || !password || password.length < 8) {
-            return res.status(400).send("Enter valid details. Password must be at least 8 characters.");
+            return res.status(400).send(
+                "Enter valid details. Password must be at least 8 characters."
+            );
         }
 
         const existingUser = await User.findOne({
@@ -78,6 +392,7 @@ app.post("/register", async (req, res) => {
         };
 
         res.redirect("/");
+
     } catch (error) {
         console.error("Registration error:", error);
         res.status(500).send("Registration failed.");
@@ -85,8 +400,12 @@ app.post("/register", async (req, res) => {
 });
 
 
+// --------------------------------------------------
 // LOGIN
+// --------------------------------------------------
+
 app.post("/login", async (req, res) => {
+
     try {
         const { email, password } = req.body;
 
@@ -105,6 +424,7 @@ app.post("/login", async (req, res) => {
         };
 
         res.redirect("/");
+
     } catch (error) {
         console.error("Login error:", error);
         res.status(500).send("Login failed.");
@@ -112,8 +432,12 @@ app.post("/login", async (req, res) => {
 });
 
 
-// LOGOUT
+// --------------------------------------------------
+// LOGOUT AND AUTHENTICATION
+// --------------------------------------------------
+
 app.post("/logout", (req, res) => {
+
     req.session.destroy(() => {
         res.clearCookie("connect.sid");
         res.redirect("/login");
@@ -121,6 +445,7 @@ app.post("/logout", (req, res) => {
 });
 
 function requireAuth(req, res, next) {
+
     if (!req.session.user) {
         return res.redirect("/login");
     }
@@ -135,202 +460,468 @@ app.get("/login", (req, res) => {
 app.get("/register", (req, res) => {
     res.render("register");
 });
+
+// --------------------------------------------------
+// DASHBOARD
+// --------------------------------------------------
+
 app.get("/", requireAuth, async (req, res) => {
+
     try {
         const clientId = req.session.user.clientId;
 
-        // Fetch this user's portfolio from MongoDB
-        const portfolio = await Portfolio.findOne({ clientId }).lean();
+        const allPortfolios = await Portfolio.find({ clientId })
+            .sort({ reportDate: -1, createdAt: -1 })
+            .lean();
 
-        if (!portfolio) {
+        const allDocumentHoldings = allPortfolios.flatMap(snapshot =>
+            (snapshot.holdings || []).map(holding => ({
+                ...holding,
+                documentName: snapshot.documentName || "Unknown document",
+                documentType: snapshot.documentType || "Unknown",
+                reportDate: snapshot.reportDate,
+                isDemo: isDemoDocument(snapshot)
+            }))
+        );
+
+        const consolidated = consolidatePortfolios(allPortfolios);
+        const portfolio = consolidated.portfolio;
+
+        if (portfolio.holdings.length === 0) {
+
             return res.render("dashboard", {
+                portfolio: null,
                 analytics: null,
                 risk: null,
-                error: "No portfolio found. Please sync your portfolio."
+                allDocumentHoldings,
+                duplicateRecords: [],
+                conflicts: [],
+                error: "No actual investment holdings found."
             });
         }
 
-        // Prepare portfolio data for Python
-        const portfolioPayload = {
-            client_id: clientId,
-            currency: portfolio.currency,
-            holdings: portfolio.holdings.map(item => ({
-                name: item.name,
-                asset_class: item.assetClass,
-                value: item.value,
-                page: item.page
-            }))
-        };
+        const portfolioPayload = createAnalyticsPayload(
+            clientId,
+            portfolio
+        );
 
-        const headers = {
-            "X-Service-Secret": process.env.AI_SERVICE_SECRET
-        };
+        if (portfolioPayload.holdings.length === 0) {
 
-        // Send portfolio to Python analytics
+            return res.render("dashboard", {
+                portfolio,
+                analytics: null,
+                risk: null,
+                allDocumentHoldings,
+                duplicateRecords: consolidated.duplicateRecords,
+                conflicts: consolidated.conflicts,
+                error: "No holdings have verified current market values."
+            });
+        }
+
         const analyticsResponse = await axios.post(
             `${AI_URL}/analytics`,
             portfolioPayload,
-            { headers }
+            {
+                headers: getServiceHeaders(),
+                timeout: 30000
+            }
         );
 
-        // Risk endpoint will be updated to accept portfolio data next
         const riskResponse = await axios.post(
             `${AI_URL}/risk`,
             portfolioPayload,
-            { headers }
+            {
+                headers: getServiceHeaders(),
+                timeout: 30000
+            }
         );
 
         res.render("dashboard", {
+            portfolio,
             analytics: analyticsResponse.data,
             risk: riskResponse.data,
+            allDocumentHoldings,
+            duplicateRecords: consolidated.duplicateRecords,
+            conflicts: consolidated.conflicts,
             error: null
         });
 
     } catch (error) {
-        console.error("Dashboard error:", error.message);
+
+        console.error(
+            "Dashboard error:",
+            error.response?.data || error.message
+        );
 
         res.render("dashboard", {
+            portfolio: null,
             analytics: null,
             risk: null,
+            allDocumentHoldings: [],
+            duplicateRecords: [],
+            conflicts: [],
             error: "Unable to load portfolio analytics."
         });
     }
-})
+});
 
 
-const Document = require("./models/Document");
+// --------------------------------------------------
+// UPLOAD DOCUMENTS
+// --------------------------------------------------
 
-app.post("/upload", requireAuth, upload.single("file"), async (req, res) => {
-    let documentRecord;
+app.post(
+    "/upload",
+    requireAuth,
+    upload.array("files", 10),
+    async (req, res) => {
 
-    try {
-        if (
-            !req.file ||
-            path.extname(req.file.originalname).toLowerCase() !== ".pdf" ||
-            req.file.mimetype !== "application/pdf"
-        ) {
-            return res.status(400).send("Please upload a valid PDF file.");
+        const files = req.files || [];
+
+        if (files.length === 0) {
+            return res.status(400).send(
+                "Please select at least one file."
+            );
         }
 
         const clientId = req.session.user.clientId;
+        const results = [];
 
-        const form = new FormData();
-        form.append("client_id", clientId);
+        for (const file of files) {
 
-        form.append("file", req.file.buffer, {
-            filename: req.file.originalname,
-            contentType: "application/pdf"
-        });
+            let documentRecord;
 
-        documentRecord = await Document.create({
-            clientId,
-            originalName: req.file.originalname,
-            storedName: req.file.originalname,
-            fileSize: req.file.size,
-            status: "processing"
-        });
-        
-        const response = await axios.post(
-            `${AI_URL}/upload`,
-            form,
-            {
-                headers: {
-                    ...form.getHeaders(),
-                    "X-Service-Secret": process.env.AI_SERVICE_SECRET
+            try {
+
+                const extension = path.extname(
+                    file.originalname
+                ).toLowerCase();
+
+                if (![".pdf", ".xlsx"].includes(extension)) {
+                    throw new Error(
+                        "Only PDF and XLSX files are accepted."
+                    );
                 }
+
+                const form = new FormData();
+
+                form.append("client_id", clientId);
+
+                form.append("file", file.buffer, {
+                    filename: file.originalname,
+                    contentType: file.mimetype
+                });
+
+                documentRecord = await Document.create({
+                    clientId,
+                    originalName: file.originalname,
+                    storedName: file.originalname,
+                    fileType: extension.replace(".", ""),
+                    fileSize: file.size,
+                    status: "processing"
+                });
+
+                const response = await axios.post(
+                    `${AI_URL}/upload`,
+                    form,
+                    {
+                        headers: {
+                            ...form.getHeaders(),
+                            ...getServiceHeaders()
+                        },
+                        timeout: 120000,
+                        maxBodyLength: Infinity
+                    }
+                );
+
+                let holdings = [];
+                let currency = "INR";
+                let reportDate = null;
+
+                // PDF PROCESSING
+
+                if (extension === ".pdf") {
+
+                    const extracted = response.data.portfolio;
+
+                    if (
+                        !extracted ||
+                        !Array.isArray(extracted.holdings) ||
+                        extracted.holdings.length === 0
+                    ) {
+                        throw new Error(
+                            "Invalid portfolio data extracted from PDF."
+                        );
+                    }
+
+                    holdings = extracted.holdings.map(item => ({
+                        name: item.name,
+                        assetClass: item.asset_class || "Other",
+                        subCategory: item.sub_category ?? null,
+                        isin: item.isin ?? null,
+                        quantity: item.quantity ?? null,
+                        investedValue: item.invested_value ?? null,
+                        currentValue: item.current_value ?? null,
+                        profitLoss: item.profit_loss ?? null,
+                        profitLossPercentage:
+                            item.profit_loss_percentage ?? null,
+                        folioNumber: item.folio_number ?? null,
+                        source: item.source ?? null,
+                        averageNav: item.average_nav ?? null,
+                        currentNav: item.current_nav ?? null,
+                        page: item.page ?? null
+                    }));
+
+                    currency = extracted.currency || "INR";
+
+                    if (
+                        extracted.report_date &&
+                        !Number.isNaN(
+                            new Date(extracted.report_date).getTime()
+                        )
+                    ) {
+                        reportDate = new Date(extracted.report_date);
+                    }
+
+                    for (const item of holdings) {
+
+                        if (
+                            typeof item.name !== "string" ||
+                            !item.name.trim() ||
+                            (
+                                item.currentValue !== null &&
+                                item.currentValue !== undefined &&
+                                (
+                                    !isValidNumber(item.currentValue) ||
+                                    item.currentValue < 0
+                                )
+                            )
+                        ) {
+                            throw new Error(
+                                `Invalid PDF holding: ${item.name || "Unknown"}`
+                            );
+                        }
+                    }
+                }
+
+                // EXCEL PROCESSING
+
+                else if (extension === ".xlsx") {
+
+                    const sheets = response.data.sheets;
+                    console.log("EXCEL API RESPONSE:");
+                    console.dir(response.data, { depth: 6 });
+
+                    console.log("SHEET NAMES:", Object.keys(sheets || {}));
+
+                    for (const [name, sheet] of Object.entries(sheets || {})) {
+                        console.log("SHEET:", name);
+                        console.log("STATUS:", sheet?.status);
+                        console.log("HOLDINGS COUNT:", sheet?.holdings?.length);
+                    }
+                    if (
+                        response.data.report_date &&
+                        !Number.isNaN(new Date(response.data.report_date).getTime())
+                    ) {
+                        reportDate = new Date(response.data.report_date);
+                    }
+
+                    if (!sheets || typeof sheets !== "object") {
+                        throw new Error(
+                            "Invalid Excel extraction response."
+                        );
+                    }
+
+                    for (const sheet of Object.values(sheets)) {
+
+                        if (
+                            sheet.status !== "processed" ||
+                            !Array.isArray(sheet.holdings)
+                        ) {
+                            continue;
+                        }
+
+                        for (const item of sheet.holdings) {
+
+                            const holding = {
+                                name: item.name,
+                                assetClass: item.asset_class || "Other",
+                                subCategory: item.sub_category ?? null,
+                                isin: item.isin ?? null,
+                                quantity: item.quantity ?? null,
+                                investedValue: item.invested_value ?? null,
+                                currentValue: item.current_value ?? null,
+                                profitLoss: item.profit_loss ?? null,
+                                profitLossPercentage:
+                                    item.profit_loss_percentage ?? null,
+                                folioNumber: item.folio_number ?? null,
+                                source: item.source ?? null,
+                                averageNav: item.average_nav ?? null,
+                                currentNav: item.current_nav ?? null,
+                                rowNumber: item.row_number ?? null,
+                                page: null
+                            };
+
+                            if (
+                                typeof holding.name !== "string" ||
+                                !holding.name.trim()
+                            ) {
+                                continue;
+                            }
+
+                            holdings.push(holding);
+                        }
+                    }
+
+                    if (holdings.length === 0) {
+                        throw new Error(
+                            "No investment records found in Excel."
+                        );
+                    }
+                }
+
+                // VALIDATE FINANCIAL VALUES
+
+                for (const holding of holdings) {
+
+                    for (const field of [
+                        "currentValue",
+                        "investedValue",
+                        "quantity",
+                        "profitLoss",
+                        "profitLossPercentage",
+                        "averageNav",
+                        "currentNav"
+                    ]) {
+
+                        const value = holding[field];
+
+                        if (
+                            value !== null &&
+                            value !== undefined &&
+                            !isValidNumber(value)
+                        ) {
+                            throw new Error(
+                                `Invalid ${field} for ${holding.name}.`
+                            );
+                        }
+                    }
+
+                    if (
+                        holding.currentValue !== null &&
+                        holding.currentValue < 0
+                    ) {
+                        throw new Error(
+                            `Negative current value for ${holding.name}.`
+                        );
+                    }
+
+                    if (
+                        holding.investedValue !== null &&
+                        holding.investedValue < 0
+                    ) {
+                        throw new Error(
+                            `Negative invested value for ${holding.name}.`
+                        );
+                    }
+                }
+
+                // CALCULATE TOTAL USING AVAILABLE VALUES
+
+                const calculatedTotal = holdings.reduce(
+                    (sum, item) =>
+                        sum + (
+                            isValidNumber(item.currentValue)
+                                ? item.currentValue
+                                : 0
+                        ),
+                    0
+                );
+
+                const isDemo = /demo|sample|illustrative/i.test(
+                    file.originalname
+                );
+
+                await Portfolio.create({
+                    clientId,
+                    documentId: documentRecord._id,
+                    documentName: file.originalname,
+                    documentType: extension.replace(".", ""),
+                    isDemo,
+                    currency,
+                    totalValue: Number(calculatedTotal.toFixed(2)),
+                    reportDate,
+                    holdings
+                });
+
+                console.log(
+                    "Portfolio snapshot saved:",
+                    file.originalname,
+                    "Records:",
+                    holdings.length,
+                    "Total:",
+                    calculatedTotal,
+                    "Demo:",
+                    isDemo
+                );
+
+                await Document.findByIdAndUpdate(
+                    documentRecord._id,
+                    {
+                        totalChunks: response.data.total_chunks || 0,
+                        status: "ready"
+                    }
+                );
+
+                results.push({
+                    filename: file.originalname,
+                    status: "ready"
+                });
+
+            } catch (error) {
+
+                console.error(
+                    `Upload failed for ${file.originalname}:`,
+                    error.response?.data || error.message
+                );
+
+                if (documentRecord) {
+                    await Document.findByIdAndUpdate(
+                        documentRecord._id,
+                        { status: "failed" }
+                    );
+                }
+
+                results.push({
+                    filename: file.originalname,
+                    status: "failed",
+                    error: error.message
+                });
             }
-        );
+        }
 
-        
-const extracted = response.data.portfolio;
-console.log("EXTRACTED PORTFOLIO:");
-console.log(JSON.stringify(extracted, null, 2));
+        const successful = results.filter(
+            item => item.status === "ready"
+        ).length;
 
-console.log("TOTAL VALUE:", extracted?.total_value);
-console.log("HOLDINGS:", extracted?.holdings);
-if (
-    !extracted ||
-    !Array.isArray(extracted.holdings) ||
-    extracted.holdings.length === 0 ||
-    !Number.isFinite(extracted.total_value) ||
-    extracted.total_value <= 0
-) {
-    throw new Error("Invalid portfolio data extracted from PDF.");
-}
+        if (successful === 0) {
+            return res.status(500).send(
+                "All document uploads failed. Please check the server logs."
+            );
+        }
 
-const holdings = extracted.holdings.map(item => ({
-    name: item.name,
-    assetClass: item.asset_class,
-    value: item.value,
-    page: item.page
-}));
+        console.log("Upload results:", results);
 
-if (holdings.some(item =>
-    !item.name ||
-    !item.assetClass ||
-    !Number.isFinite(item.value) ||
-    item.value < 0 ||
-    !Number.isInteger(item.page) ||
-    item.page < 1
-)) {
-    throw new Error("Extracted holdings contain invalid data.");
-}
-
-const calculatedTotal = holdings.reduce(
-    (sum, item) => sum + item.value,
-    0
-);
-
-if (Math.abs(calculatedTotal - extracted.total_value) > 1) {
-    throw new Error("Portfolio total does not match holding values.");
-}
-
-await Portfolio.findOneAndUpdate(
-    { clientId },
-    {
-        clientId,
-        currency: extracted.currency,
-        totalValue: extracted.total_value,
-        reportDate: extracted.report_date
-            ? new Date(extracted.report_date)
-            : new Date(),
-        holdings
-    },
-    {
-        upsert: true,
-        new: true,
-        runValidators: true
+        res.redirect("/");
     }
 );
 
-await Document.findByIdAndUpdate(documentRecord._id, {
-    totalChunks: response.data.total_chunks,
-    status: "ready"
-});
-
-res.redirect("/");
-    } catch (error) {
-    console.error(
-        "Upload error:",
-        error.response?.data || error.message
-    );
-
-    if (documentRecord) {
-        await Document.findByIdAndUpdate(documentRecord._id, {
-            status: "failed"
-        });
-    }
-
-    if (!res.headersSent) {
-        res.status(500).send("Document upload failed.");
-    }
-}
-});
-
-
-
+// --------------------------------------------------
+// CHAT
+// --------------------------------------------------
 
 app.post("/chat", requireAuth, async (req, res) => {
+
     try {
         const clientId = req.session.user.clientId;
         const question = req.body.question?.trim();
@@ -342,17 +933,15 @@ app.post("/chat", requireAuth, async (req, res) => {
         }
 
         const response = await axios.post(
-    `${AI_URL}/chat`,
-    {
-        question,
-        client_id: clientId
-    },
-    {
-        headers: {
-            "X-Service-Secret": process.env.AI_SERVICE_SECRET
-        }
-    }
-);
+            `${AI_URL}/chat`,
+            {
+                question,
+                client_id: clientId
+            },
+            {
+                headers: getServiceHeaders()
+            }
+        );
 
         const result = response.data;
 
@@ -385,6 +974,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         res.json(result);
 
     } catch (error) {
+
         console.error("Chat error:", error.message);
 
         res.status(500).json({
@@ -392,7 +982,14 @@ app.post("/chat", requireAuth, async (req, res) => {
         });
     }
 });
+
+
+// --------------------------------------------------
+// CHAT HISTORY
+// --------------------------------------------------
+
 app.get("/chat/history", requireAuth, async (req, res) => {
+
     try {
         const clientId = req.session.user.clientId;
 
@@ -403,6 +1000,7 @@ app.get("/chat/history", requireAuth, async (req, res) => {
         });
 
     } catch (error) {
+
         console.error("Chat history error:", error.message);
 
         res.status(500).json({
@@ -411,44 +1009,51 @@ app.get("/chat/history", requireAuth, async (req, res) => {
     }
 });
 
+
+// --------------------------------------------------
+// RISK EXPLANATION
+// --------------------------------------------------
+
 app.post("/risk/explanation", requireAuth, async (req, res) => {
+
     try {
         const clientId = req.session.user.clientId;
 
-        const portfolio = await Portfolio.findOne({
-            clientId
-        }).lean();
+        const allPortfolios = await Portfolio.find({ clientId })
+            .sort({ reportDate: -1, createdAt: -1 })
+            .lean();
 
-        if (!portfolio) {
+        const consolidated = consolidatePortfolios(allPortfolios);
+
+        if (consolidated.portfolio.holdings.length === 0) {
             return res.status(404).json({
                 error: "Portfolio not found."
             });
         }
 
-        const portfolioPayload = {
-            client_id: clientId,
-            currency: portfolio.currency,
-            holdings: portfolio.holdings.map(item => ({
-                name: item.name,
-                asset_class: item.assetClass,
-                value: item.value,
-                page: item.page
-            }))
-        };
+        const portfolioPayload = createAnalyticsPayload(
+            clientId,
+            consolidated.portfolio
+        );
+
+        if (portfolioPayload.holdings.length === 0) {
+            return res.status(409).json({
+                error: "No verified holdings are available for risk analysis."
+            });
+        }
 
         const response = await axios.post(
             `${AI_URL}/risk/explanation`,
             portfolioPayload,
             {
-                headers: {
-                    "X-Service-Secret": process.env.AI_SERVICE_SECRET
-                }
+                headers: getServiceHeaders()
             }
         );
 
         res.json(response.data);
 
     } catch (error) {
+
         console.error(
             "Risk explanation error:",
             error.response?.data || error.message
@@ -461,9 +1066,17 @@ app.post("/risk/explanation", requireAuth, async (req, res) => {
 });
 
 
+// --------------------------------------------------
+// LEGACY PORTFOLIO SYNC
+// --------------------------------------------------
+
 app.post("/portfolio/sync", requireAuth, async (req, res) => {
+
     try {
-        const filePath = path.join(__dirname, "../data/portfolio.json");
+        const filePath = path.join(
+            __dirname,
+            "../data/portfolio.json"
+        );
 
         const portfolioData = JSON.parse(
             fs.readFileSync(filePath, "utf8")
@@ -473,31 +1086,30 @@ app.post("/portfolio/sync", requireAuth, async (req, res) => {
 
         const holdings = portfolioData.holdings.map(item => ({
             name: item.name,
-            assetClass: item.asset_class,
-            value: item.value,
-            page: item.page
+            assetClass: item.asset_class || "Other",
+            investedValue: item.invested_value ?? null,
+            currentValue: item.value ?? null,
+            page: item.page ?? null
         }));
 
-        const totalValue = holdings.reduce(
-            (sum, item) => sum + item.value,
+        const validTotal = holdings.reduce(
+            (sum, item) =>
+                sum + (
+                    isValidNumber(item.currentValue)
+                        ? item.currentValue
+                        : 0
+                ),
             0
         );
 
-        const portfolio = await Portfolio.findOneAndUpdate(
-            { clientId },
-            {
-                clientId,
-                currency: portfolioData.currency,
-                totalValue,
-                reportDate: portfolioData.report_date,
-                holdings
-            },
-            {
-                new: true,
-                upsert: true,
-                runValidators: true
-            }
-        );
+        const portfolio = await Portfolio.create({
+            clientId,
+            currency: portfolioData.currency || "INR",
+            totalValue: validTotal,
+            reportDate: portfolioData.report_date || new Date(),
+            holdings,
+            isDemo: false
+        });
 
         res.json({
             message: "Portfolio saved successfully!",
@@ -505,6 +1117,7 @@ app.post("/portfolio/sync", requireAuth, async (req, res) => {
         });
 
     } catch (error) {
+
         console.error("Portfolio sync error:", error.message);
 
         res.status(500).json({
@@ -513,24 +1126,72 @@ app.post("/portfolio/sync", requireAuth, async (req, res) => {
     }
 });
 
-connectDB().then(() => {
-    sessionMiddleware = session({
-        secret: process.env.SESSION_SECRET,
-        resave: false,
-        saveUninitialized: false,
-        store: MongoStore.create({
-            client: mongoose.connection.getClient(),
-            touchAfter: 24 * 60 * 60
-        }),
-        cookie: {
-            httpOnly: true,
-            secure: false,
-            sameSite: "lax",
-            maxAge: 1000 * 60 * 60 * 24
-        }
-    });
 
-    app.listen(PORT, () => {
-        console.log(`WealthWise AI running at http://localhost:${PORT}`);
+// --------------------------------------------------
+// DOCUMENT LIST
+// --------------------------------------------------
+
+app.get("/documents", requireAuth, async (req, res) => {
+
+    try {
+        const documents = await Document.find({
+            clientId: req.session.user.clientId
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+
+        res.json({
+            documents: documents.map(doc => ({
+                name: doc.originalName,
+                type: (doc.fileType || "unknown").toUpperCase(),
+                size: doc.fileSize,
+                chunks: doc.totalChunks,
+                status: doc.status,
+                uploadedAt: doc.createdAt
+            }))
+        });
+
+    } catch (error) {
+
+        console.error("Document listing error:", error.message);
+
+        res.status(500).json({
+            error: "Unable to load documents."
+        });
+    }
+});
+
+
+// --------------------------------------------------
+// START SERVER
+// --------------------------------------------------
+
+connectDB()
+    .then(() => {
+
+        sessionMiddleware = session({
+            secret: process.env.SESSION_SECRET,
+            resave: false,
+            saveUninitialized: false,
+            store: MongoStore.create({
+                client: mongoose.connection.getClient(),
+                touchAfter: 24 * 60 * 60
+            }),
+            cookie: {
+                httpOnly: true,
+                secure: false,
+                sameSite: "lax",
+                maxAge: 1000 * 60 * 60 * 24
+            }
+        });
+
+        app.listen(PORT, () => {
+            console.log(
+                `WealthWise AI running at http://localhost:${PORT}`
+            );
+        });
+
+    })
+    .catch(error => {
+        console.error("Database connection failed:", error);
     });
-}).catch(console.error);

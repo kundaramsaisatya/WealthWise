@@ -7,32 +7,44 @@ const documentSchema = new mongoose.Schema({
         required: true,
         index: true
     },
+
     originalName: {
         type: String,
-        required: true
+        required: true,
+        trim: true
     },
+
     storedName: {
         type: String,
         required: true
     },
+
     fileType: {
         type: String,
-        default: "application/pdf"
+        enum: ["pdf", "xlsx"],
+        required: true
     },
+
     fileSize: {
-        type: Number
+        type: Number,
+        default: 0
     },
+
     totalChunks: {
         type: Number,
         default: 0
     },
+
     status: {
         type: String,
         enum: ["processing", "ready", "failed"],
         default: "processing"
     }
+
 }, {
     timestamps: true
 });
+
+documentSchema.index({ clientId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Document", documentSchema);

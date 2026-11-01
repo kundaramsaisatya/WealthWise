@@ -169,3 +169,54 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 });
+
+async function loadDocuments() {
+
+    const container = document.getElementById("document-list");
+
+    if (!container) return;
+
+    try {
+
+        const response = await fetch("/documents");
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || "Unable to load documents.");
+        }
+
+        container.replaceChildren();
+
+        if (!data.documents.length) {
+            container.textContent = "No documents uploaded yet.";
+            return;
+        }
+
+        data.documents.forEach(doc => {
+
+            const item = document.createElement("div");
+            item.className = "message";
+
+            const name = document.createElement("strong");
+            name.textContent = doc.name;
+
+            const details = document.createElement("p");
+            details.textContent =
+                `${doc.type} | ${doc.chunks} chunks | ${doc.status.toUpperCase()}`;
+
+            const date = document.createElement("small");
+            date.textContent =
+                new Date(doc.uploadedAt).toLocaleString();
+
+            item.append(name, details, date);
+            container.appendChild(item);
+        });
+
+    } catch (error) {
+
+        container.textContent = error.message;
+
+    }
+}
+
+document.addEventListener("DOMContentLoaded", loadDocuments);
