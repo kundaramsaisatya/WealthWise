@@ -66,8 +66,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (
             !performance ||
-            !Array.isArray(performance.snapshots) ||
-            performance.snapshots.length < 2
+            !Array.isArray(performance.history) ||
+            performance.history.length < 2
         ) {
             message.textContent =
                 "At least two valid historical statements are required.";
@@ -80,12 +80,12 @@ document.addEventListener("DOMContentLoaded", () => {
         new Chart(canvas, {
             type: "line",
             data: {
-                labels: performance.snapshots.map(item =>
+                labels: performance.history.map(item =>
                     item.report_date
                 ),
                 datasets: [{
                     label: "Portfolio Value (₹)",
-                    data: performance.snapshots.map(item =>
+                    data: performance.history.map(item =>
                         Number(item.total_value)
                     ),
                     tension: 0.3,
