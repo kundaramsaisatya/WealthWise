@@ -52,6 +52,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 
+//financialGoal
+const FinancialGoal = require("./models/FinancialGoal");
+
+const {
+    calculateGoalPlan
+} = require("./utils/goalCalculator");
+
 // --------------------------------------------------
 // SHARED HELPERS
 // --------------------------------------------------
@@ -1398,6 +1405,298 @@ app.get("/documents", requireAuth, async (req, res) => {
             error: "Unable to load documents."
         });
     }
+});
+
+//Financial Goal
+
+// --------------------------------------------------
+// FINANCIAL GOALS API
+// --------------------------------------------------
+
+const allowedGoalFields = [
+    "name",
+    "category",
+    "targetAmount",
+    "currentSavings",
+    "targetDate",
+    "inflationRate",
+    "expectedAnnualReturn",
+    "monthlyContribution",
+    "status"
+];
+
+function validateGoalInput(data, isUpdate = false) {
+
+    const errors = [];
+
+    if (!isUpdate || data.name !== undefined) {
+        if (
+            typeof data.name !== "string" ||
+            !data.name.trim()
+        ) {
+            errors.push("Goal name is required.");
+        }
+    }
+
+    if (!isUpdate || data.category !== undefined) {
+        const categories = [
+            "Retirement",
+            "House",
+            "Education",
+            "Travel",
+            "Emergency Fund",
+            "Other"
+        ];
+
+        if (!categories.includes(data.category)) {
+            errors.push("Invalid goal category.");
+        }
+    }
+
+    const numericFields = [
+        "targetAmount",
+        "currentSavings",
+        "inflationRate",
+        "expectedAnnualReturn",
+        "monthlyContribution"
+    ];
+
+    for (const field of numericFields) {
+
+        if (data[field] === undefined) {
+            if (!isUpdate && field === "targetAmount") {
+                errors.push("Target amount is required.");
+            }
+            continue;
+        }
+
+        const value = data[field];
+
+        if (
+            typeof value !== "number" ||
+            !Number.isFinite(value) ||
+            value < 0
+        ) {
+            errors.push(`${field} must be a valid non-negative number.`);
+        }
+    }
+
+    if (data.targetAmount !== undefined && data.targetAmount <= 0) {
+        errors.push("Target amount must be greater than zero.");
+    }
+
+    if (
+        data.inflationRate !== undefined &&
+        data.inflationRate > 30
+    ) {
+        errors.push("Inflation rate cannot exceed 30%.");
+    }
+
+    if (
+        data.expectedAnnualReturn !== undefined &&
+        data.expectedAnnualReturn > 50
+    ) {
+        errors.push("Expected return cannot exceed 50%.");
+    }
+
+    if (data.targetDate !== undefined) {
+
+        const date = new Date(data.targetDate);
+
+        if (Number.isNaN(date.getTime())) {
+            errors.push("Invalid target date.");
+        } else if (date <= new Date()) {
+            errors.push("Target date must be in the future.");
+        }
+    }
+
+    if (
+        data.status !== undefined &&
+        !["Active", "Completed", "Paused"].includes(data.status)
+    ) {
+        errors.push("Invalid goal status.");
+    }
+
+    return errors;
+}
+
+
+// GET ALL GOALS
+
+app.get("/goals", requireAuth, async (req, res) => {
+
+    try {
+
+        const clientId = req.session.user.clientId;
+
+        const goals = await FinancialGoal.find({ clientId })
+            .sort({ targetDate: 1 })
+            .lean();
+
+        const result = goals.map(goal => ({
+            ...goal,
+            plan: calculateGoalPlan(goal)
+        }));
+
+        return res.json({ goals: result });
+
+    } catch (error) {
+
+        console.error("Goal listing error:", error.message);
+
+        return res.status(500).json({
+            error: "Unable to load financial goals."
+        });
+    }
+});
+
+
+// CREATE GOAL
+
+app.post("/goals", requireAuth, async (req, res) => {
+
+    try {
+
+        const errors = validateGoalInput(req.body);
+
+        if (errors.length > 0) {
+            return res.status(400).json({ errors });
+        }
+
+        const goalData = {};
+
+        for (const field of allowedGoalFields) {
+            if (req.body[field] !== undefined) {
+                goalData[field] = req.body[field];
+            }
+        }
+
+        const goal = await FinancialGoal.create({
+            ...goalData,
+            clientId: req.session.user.clientId
+        });
+
+        return res.status(201).json({
+            message: "Financial goal created successfully.",
+            goal: {
+                ...goal.toObject(),
+                plan: calculateGoalPlan(goal.toObject())
+            }
+        });
+
+    } catch (error) {
+
+        console.error("Goal creation error:", error.message);
+
+        return res.status(500).json({
+            error: "Unable to create financial goal."
+        });
+    }
+});
+
+
+// UPDATE GOAL
+
+app.put("/goals/:id", requireAuth, async (req, res) => {
+
+    try {
+
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({
+                error: "Invalid goal ID."
+            });
+        }
+
+        const errors = validateGoalInput(req.body, true);
+
+        if (errors.length > 0) {
+            return res.status(400).json({ errors });
+        }
+
+        const updateData = {};
+
+        for (const field of allowedGoalFields) {
+            if (req.body[field] !== undefined) {
+                updateData[field] = req.body[field];
+            }
+        }
+
+        const goal = await FinancialGoal.findOneAndUpdate(
+            {
+                _id: req.params.id,
+                clientId: req.session.user.clientId
+            },
+            { $set: updateData },
+            {
+                new: true,
+                runValidators: true
+            }
+        );
+
+        if (!goal) {
+            return res.status(404).json({
+                error: "Financial goal not found."
+            });
+        }
+
+        return res.json({
+            message: "Financial goal updated successfully.",
+            goal: {
+                ...goal.toObject(),
+                plan: calculateGoalPlan(goal.toObject())
+            }
+        });
+
+    } catch (error) {
+
+        console.error("Goal update error:", error.message);
+
+        return res.status(500).json({
+            error: "Unable to update financial goal."
+        });
+    }
+});
+
+
+// DELETE GOAL
+
+app.delete("/goals/:id", requireAuth, async (req, res) => {
+
+    try {
+
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({
+                error: "Invalid goal ID."
+            });
+        }
+
+        const goal = await FinancialGoal.findOneAndDelete({
+            _id: req.params.id,
+            clientId: req.session.user.clientId
+        });
+
+        if (!goal) {
+            return res.status(404).json({
+                error: "Financial goal not found."
+            });
+        }
+
+        return res.json({
+            message: "Financial goal deleted successfully."
+        });
+
+    } catch (error) {
+
+        console.error("Goal deletion error:", error.message);
+
+        return res.status(500).json({
+            error: "Unable to delete financial goal."
+        });
+    }
+});
+
+app.get("/financial-goals", requireAuth, (req, res) => {
+    res.render("financial-goals");
 });
 
 
