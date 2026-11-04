@@ -18,6 +18,11 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    riskTolerance: {
+    type: String,
+    enum: ["conservative", "moderate", "aggressive"],
+    default: null
+    },
     clientId: {
         type: String,
         unique: true,

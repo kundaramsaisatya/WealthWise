@@ -63,6 +63,22 @@ function renderFlags(flags) {
   <div class="finding"><span class="severity ${safe(flag.severity)}">${safe(flag.severity)} · ${safe(flag.type)}</span>
   <strong>${safe(flag.message)}</strong></div>`).join("")}</div>`;
 }
+function renderRecommendations(items) {
+ if(!items || !items.length) {
+  return '<p class="muted">No specific recommendations are available.</p>';
+ }
+
+ return `<div class="finding-list">${items.map(item=>`
+  <div class="finding">
+   <span class="severity ${safe(item.priority)}">
+    ${safe(item.priority)} Priority · ${safe(item.category)}
+   </span>
+   <strong>${safe(item.title)}</strong>
+   <p>${safe(item.reason)}</p>
+   <p>${safe(item.action)}</p>
+  </div>
+ `).join("")}</div>`;
+}
 function renderAllocation(items) {
  if(!items || !items.length) return '<p class="muted">Asset allocation details are unavailable.</p>';
  const total = items.reduce((sum,item)=>sum+(Number(item.value)||0),0);
@@ -109,6 +125,14 @@ async function loadAssessment(){
     <h2 class="section-title">Assessment findings</h2>
     ${renderFindings(a.findings)}
    </section>
+   <section class="panel">
+    <h2 class="section-title">Recommended Actions</h2>
+    <p class="note">
+        These suggestions are generated from your goal funding
+        calculations and configured portfolio risk rules.
+    </p>
+    ${renderRecommendations(a.recommendations)}
+</section>
    <div class="two-col">
     <section class="panel">
      <h2 class="section-title">Allocated portfolio overview</h2>
