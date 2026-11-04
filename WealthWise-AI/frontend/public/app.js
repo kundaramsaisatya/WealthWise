@@ -778,16 +778,46 @@ function initializePortfolioCharts() {
         return;
     }
 
-    // Allocation doughnut chart
+    const formatChartLabel = (value, maxLineLength = 22) => {
+        const words = String(value || "Unknown").trim().split(/\\s+/);
+        const lines = [];
+        let line = "";
+
+        words.forEach(word => {
+            const candidate = line ? `${line} ${word}` : word;
+
+            if (candidate.length > maxLineLength && line) {
+                lines.push(line);
+                line = word;
+            } else {
+                line = candidate;
+            }
+        });
+
+        if (line) lines.push(line);
+        return lines.slice(0, 3);
+    };
+
+    // Asset allocation uses "category" in the analytics API response.
     const allocationCanvas = document.getElementById("allocationChart");
-    const allocation = chartData.allocation || [];
+    const allocation = Array.isArray(chartData.allocation)
+        ? chartData.allocation
+        : [];
 
     if (allocationCanvas && allocation.length > 0) {
-        const labels = allocation.map(item =>
-            item.asset_class || item.assetClass || item.name || "Other"
+        const validAllocation = allocation.filter(item =>
+            Number(item.value ?? item.current_value ?? item.amount) > 0
         );
 
-        const values = allocation.map(item =>
+        const labels = validAllocation.map(item =>
+            item.category ||
+            item.asset_class ||
+            item.assetClass ||
+            item.name ||
+            "Unclassified"
+        );
+
+        const values = validAllocation.map(item =>
             Number(item.value ?? item.current_value ?? item.amount ?? 0)
         );
 
@@ -807,56 +837,113 @@ function initializePortfolioCharts() {
                 cutout: "65%",
                 plugins: {
                     legend: {
-                        position: "bottom"
+                        position: "bottom",
+                        labels: {
+                            boxWidth: 22,
+                            padding: 12,
+                            usePointStyle: false,
+                            font: { size: 11 }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label(context) {
+                                const total = context.dataset.data.reduce(
+                                    (sum, value) => sum + Number(value || 0), 0
+                                );
+                                const amount = Number(context.raw || 0);
+                                const percentage = total > 0
+                                    ? (amount / total * 100).toFixed(1)
+                                    : "0.0";
+                                return `${context.label}: ₹${amount.toLocaleString("en-IN")} (${percentage}%)`;
+                            }
+                        }
                     }
                 }
             }
         });
     }
 
-    // Top holdings bar chart
+    // Top holdings: wrap long investment names instead of clipping them.
     const holdingsCanvas = document.getElementById("holdingsChart");
-    const holdings = chartData.holdings || [];
+    const holdings = Array.isArray(chartData.holdings)
+        ? chartData.holdings
+        : [];
 
     if (holdingsCanvas && holdings.length > 0) {
         const topHoldings = [...holdings]
+            .filter(item =>
+                Number(item.current_value ?? item.currentValue) > 0
+            )
             .sort((a, b) =>
-                Number(b.current_value || b.currentValue || 0) -
-                Number(a.current_value || a.currentValue || 0)
+                Number(b.current_value ?? b.currentValue ?? 0) -
+                Number(a.current_value ?? a.currentValue ?? 0)
             )
             .slice(0, 8);
+
+        const fullLabels = topHoldings.map(item =>
+            item.name || item.holding_name || "Unknown investment"
+        );
 
         new Chart(holdingsCanvas, {
             type: "bar",
             data: {
-                labels: topHoldings.map(item =>
-                    item.name || item.holding_name || "Unknown"
-                ),
+                labels: fullLabels,
                 datasets: [{
                     label: "Current Value",
                     data: topHoldings.map(item =>
-                        Number(item.current_value || item.currentValue || 0)
+                        Number(item.current_value ?? item.currentValue ?? 0)
                     ),
-                    borderRadius: 6
+                    borderRadius: 6,
+                    barThickness: 22
                 }]
             },
             options: {
                 indexAxis: "y",
                 responsive: true,
                 maintainAspectRatio: false,
+                layout: {
+                    padding: { left: 8, right: 12, top: 4, bottom: 4 }
+                },
                 plugins: {
-                    legend: {
-                        display: false
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title(items) {
+                                return fullLabels[items[0].dataIndex] || "";
+                            },
+                            label(context) {
+                                return ` ₹${Number(context.raw || 0).toLocaleString("en-IN")}`;
+                            }
+                        }
                     }
                 },
                 scales: {
+                    y: {
+                        afterFit(axis) {
+                            axis.width = Math.max(axis.width, 150);
+                        },
+                        ticks: {
+                            autoSkip: false,
+                            font: { size: 10 },
+                            callback(value, index) {
+                                return formatChartLabel(fullLabels[index], 20);
+                            }
+                        },
+                        grid: { display: false }
+                    },
                     x: {
-                        beginAtZero: true
+                        beginAtZero: true,
+                        ticks: {
+                            font: { size: 10 },
+                            callback(value) {
+                                return Number(value).toLocaleString("en-IN");
+                            }
+                        }
                     }
                 }
             }
         });
     }
 }
-
 initializePortfolioCharts();
