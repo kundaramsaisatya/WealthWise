@@ -46,10 +46,16 @@ function buildGoalRecommendations(assessment, riskFlags = []) {
             "Discuss this flagged risk with a qualified financial adviser before making changes.";
 
         if (flag.type === "Concentration") {
-            title = "Review holding concentration";
+    title = "Review holding concentration";
+
+    if (flag.holding_name) {
+        action =
+            `${flag.holding_name} represents ${flag.holding_percentage}% of the portfolio, exceeding the configured limit of ${flag.configured_limit}%. Review this holding's allocation with a qualified financial adviser.`;
+    } else {
             action =
                 "Review whether too much of this goal's allocated value depends on a small number of holdings.";
-        } else if (flag.type === "Liquidity") {
+        }
+    } else if (flag.type === "Liquidity") {
             title = "Review liquidity allocation";
             action =
                 "Review whether the allocated holdings provide sufficient liquidity for this goal's timeline.";
