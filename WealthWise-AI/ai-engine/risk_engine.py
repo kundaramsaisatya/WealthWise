@@ -31,6 +31,26 @@ PROFILE_THRESHOLDS = {
 }
 
 VALID_SEVERITIES = {"High", "Medium", "Low"}
+# Illustrative goal-horizon equity limits.
+# These are configurable product rules, not investment advice.
+
+GOAL_HORIZON_EQUITY_LIMITS = [
+    {
+        "max_horizon_years": 1,
+        "max_equity_pct": 20,
+        "severity": "High",
+    },
+    {
+        "max_horizon_years": 3,
+        "max_equity_pct": 40,
+        "severity": "Medium",
+    },
+    {
+        "max_horizon_years": 5,
+        "max_equity_pct": 60,
+        "severity": "Medium",
+    },
+]
 
 # Issue types already reported by portfolio analytics.
 ALREADY_COVERED_ISSUE_TYPES = {

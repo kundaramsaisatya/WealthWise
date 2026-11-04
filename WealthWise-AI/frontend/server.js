@@ -1517,6 +1517,10 @@ function validateGoalInput(data, isUpdate = false) {
             "House",
             "Education",
             "Travel",
+            "Vehicle",
+            "Medical",
+            "Wedding",
+            "Business",
             "Emergency Fund",
             "Other"
         ];
