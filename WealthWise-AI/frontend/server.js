@@ -2052,6 +2052,7 @@ app.get("/financial-goals", requireAuth, (req, res) => {
 // GOAL-BASED PORTFOLIO ASSESSMENT
 // --------------------------------------------------
 
+
 app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -2062,7 +2063,7 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
 
         const clientId = req.session.user.clientId;
 
-        // 1. Fetch only this client's goal
+        // 1. Fetch this client's goal
         const goal = await FinancialGoal.findOne({
             _id: req.params.id,
             clientId
@@ -2074,12 +2075,11 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
             });
         }
 
-        // 2. Fetch the client's portfolio snapshots
+        // 2. Load and consolidate portfolio snapshots
         const allPortfolios = await Portfolio.find({ clientId })
             .sort({ reportDate: -1, createdAt: -1 })
             .lean();
 
-        // 3. Reuse existing consolidation logic
         const consolidated = consolidatePortfolios(allPortfolios);
         const portfolio = consolidated.portfolio;
 
@@ -2089,22 +2089,87 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
             });
         }
 
-        // 4. Build the same verified analytics payload
-        const portfolioPayload = createAnalyticsPayload(
+        // 3. Fetch allocations belonging ONLY to this goal
+        const allocations = await GoalHoldingAllocation.find({
             clientId,
-            portfolio
-        );
+            goalId: goal._id
+        }).lean();
 
-        if (!portfolioPayload.holdings.length) {
+        if (!allocations.length) {
             return res.status(422).json({
-                error: "No verified holdings are available for assessment."
+                error: "No holdings have been allocated to this goal."
             });
         }
 
-        // 5. Run the existing risk engine
+        // 4. Match allocations against verified consolidated holdings
+        const holdingMap = new Map(
+            portfolio.holdings
+                .filter(holding =>
+                    isValidNumber(holding.currentValue) &&
+                    holding.currentValue > 0 &&
+                    !holding.hasConflict
+                )
+                .map(holding => [holding.holdingKey, holding])
+        );
+
+        const allocatedHoldings = [];
+
+        for (const allocation of allocations) {
+            const holding = holdingMap.get(allocation.holdingKey);
+
+            if (!holding) {
+                return res.status(422).json({
+                    error: `Allocated holding "${allocation.holdingName}" is no longer verified.`
+                });
+            }
+
+            if (
+                !isValidNumber(allocation.amount) ||
+                allocation.amount <= 0 ||
+                allocation.amount > holding.currentValue + 0.001
+            ) {
+                return res.status(422).json({
+                    error: `Invalid allocation for "${holding.name}".`
+                });
+            }
+
+            // Scale cost basis and quantity proportionally.
+            const allocationRatio =
+                allocation.amount / holding.currentValue;
+
+            allocatedHoldings.push({
+                ...holding,
+                currentValue: allocation.amount,
+                investedValue:
+                    isValidNumber(holding.investedValue)
+                        ? holding.investedValue * allocationRatio
+                        : null,
+                quantity:
+                    isValidNumber(holding.quantity)
+                        ? holding.quantity * allocationRatio
+                        : null
+            });
+        }
+
+        // 5. Build a risk payload containing ONLY goal allocations
+        const goalPortfolioPayload = createAnalyticsPayload(
+            clientId,
+            {
+                ...portfolio,
+                holdings: allocatedHoldings
+            }
+        );
+
+        if (!goalPortfolioPayload.holdings.length) {
+            return res.status(422).json({
+                error: "No valid allocated holdings are available."
+            });
+        }
+
+        // 6. Call the dedicated goal risk endpoint
         const riskResponse = await axios.post(
-            `${AI_URL}/risk`,
-            portfolioPayload,
+            `${AI_URL}/risk/goal`,
+            goalPortfolioPayload,
             {
                 headers: getServiceHeaders(),
                 timeout: 30000
@@ -2113,19 +2178,21 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
 
         const riskData = riskResponse.data;
 
-        // 6. Calculate goal-based funding assessment
+        // 7. Calculate funding assessment
         const assessment = calculateGoalAssessment(
             goal,
             riskData.risk_flags || []
         );
 
-        // 7. Return assessment with actual portfolio context
+        // 8. Return goal-specific risk and funding context
         return res.json({
             assessment,
 
             portfolio_context: {
+                goal_allocated_value: riskData.total_value,
                 verified_total_value: portfolio.verifiedTotalValue,
                 is_partial: portfolio.isPartial,
+                goal_holding_count: riskData.holding_count,
                 verified_holding_count: portfolio.verifiedHoldingCount,
                 unverified_holding_count: portfolio.unverifiedHoldingCount,
                 report_date: portfolio.reportDate,
@@ -2136,7 +2203,8 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
                 risk_flags: riskData.risk_flags
             },
 
-            data_note: "Portfolio risk uses verified consolidated holdings. Goal-specific allocated amount is currently user-entered."
+            data_note:
+                "Risk analysis uses only verified holdings allocated to this goal. Cost basis and quantity are proportionally estimated from the allocation amount."
         });
 
     } catch (error) {
@@ -2150,6 +2218,7 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
         });
     }
 });
+
 
 // --------------------------------------------------
 // START SERVER
