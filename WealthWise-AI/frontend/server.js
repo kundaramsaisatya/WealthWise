@@ -736,10 +736,21 @@ app.get("/performance", requireAuth, async (req, res) => {
                     holding.currentValue >= 0
                 );
 
-            if (!hasCompleteValues) {
+            // A statement's explicitly reported total is sufficient for
+            // portfolio-level history even when a few holding rows could
+            // not be extracted. Older records without this marker must still
+            // pass the complete-holdings check.
+            const hasTrustedTotal =
+                record.totalValueSource === "reported" ||
+                (
+                    record.totalValueSource !== "incomplete" &&
+                    hasCompleteValues
+                );
+
+            if (!hasTrustedTotal) {
                 skippedDates.push({
                     report_date: date,
-                    reason: "Some holdings have missing or invalid current values."
+                    reason: "No reliable reported portfolio total and holding values are incomplete."
                 });
                 continue;
             }
@@ -880,6 +891,7 @@ app.post(
                 let holdings = [];
                 let currency = "INR";
                 let reportDate = null;
+                let reportedTotalValue = null;
 
                 // PDF PROCESSING
 
@@ -924,6 +936,16 @@ app.post(
                         )
                     ) {
                         reportDate = new Date(extracted.report_date);
+                    }
+
+                    // Prefer the explicitly reported statement total.
+                    // Never derive historical portfolio value from a partial
+                    // set of extracted holdings.
+                    if (
+                        isValidNumber(extracted.total_value) &&
+                        extracted.total_value >= 0
+                    ) {
+                        reportedTotalValue = extracted.total_value;
                     }
 
                     for (const item of holdings) {
@@ -1069,17 +1091,42 @@ app.post(
                     }
                 }
 
-                // CALCULATE TOTAL USING AVAILABLE VALUES
+                // Determine whether the snapshot has a trustworthy total.
+                // A printed statement total is preferred. Otherwise calculate
+                // only when every extracted holding has a valid current value.
+                const allHoldingsHaveCurrentValues =
+                    holdings.length > 0 &&
+                    holdings.every(item =>
+                        isValidNumber(item.currentValue) &&
+                        item.currentValue >= 0
+                    );
 
-                const calculatedTotal = holdings.reduce(
-                    (sum, item) =>
-                        sum + (
-                            isValidNumber(item.currentValue)
-                                ? item.currentValue
-                                : 0
-                        ),
-                    0
-                );
+                const calculatedTotal = allHoldingsHaveCurrentValues
+                    ? holdings.reduce(
+                        (sum, item) => sum + item.currentValue,
+                        0
+                    )
+                    : null;
+
+                const totalValueSource = isValidNumber(reportedTotalValue)
+                    ? "reported"
+                    : allHoldingsHaveCurrentValues
+                        ? "holdings"
+                        : "incomplete";
+
+                const snapshotTotal = totalValueSource === "reported"
+                    ? reportedTotalValue
+                    : totalValueSource === "holdings"
+                        ? calculatedTotal
+                        : holdings.reduce(
+                            (sum, item) =>
+                                sum + (
+                                    isValidNumber(item.currentValue)
+                                        ? item.currentValue
+                                        : 0
+                                ),
+                            0
+                        );
 
                 const isDemo = /demo|sample|illustrative/i.test(
                     file.originalname
@@ -1092,7 +1139,8 @@ app.post(
                     documentType: extension.replace(".", ""),
                     isDemo,
                     currency,
-                    totalValue: Number(calculatedTotal.toFixed(2)),
+                    totalValue: Number(snapshotTotal.toFixed(2)),
+                    totalValueSource,
                     reportDate,
                     holdings
                 });
