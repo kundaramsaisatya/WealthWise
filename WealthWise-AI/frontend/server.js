@@ -2135,6 +2135,15 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
                 error: "Financial goal not found."
             });
         }
+        const assessmentUser = await User.findById(
+            req.session.user.id
+        ).select("riskTolerance").lean();
+
+        if (!assessmentUser?.riskTolerance) {
+            return res.status(422).json({
+                error: "Please select your risk tolerance in Profile Settings before generating a personalized goal assessment."
+            });
+        }
 
         // 2. Load and consolidate portfolio snapshots
         const allPortfolios = await Portfolio.find({ clientId })
