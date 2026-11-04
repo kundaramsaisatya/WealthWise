@@ -62,6 +62,11 @@ function buildGoalRecommendations(assessment, riskFlags = []) {
             action =
                 "Discuss the flagged allocation against the configured investor-profile threshold with a qualified adviser.";
         }
+        else if (flag.type === "Goal Horizon Risk") {
+            title = "Review goal-horizon risk";
+            action =
+                "This goal has a short investment timeline. Equity prices can fluctuate significantly over short periods. Review whether the allocated holdings match the time available before the goal, and discuss alternatives with a qualified financial adviser.";
+        }
 
         recommendations.push({
             priority: flag.severity,
