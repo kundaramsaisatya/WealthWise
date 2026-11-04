@@ -17,15 +17,19 @@ const financialGoalSchema = new mongoose.Schema({
     },
 
     category: {
-        type: String,
-        required: true,
-        enum: [
-            "Retirement",
-            "House",
-            "Education",
-            "Travel",
-            "Emergency Fund",
-            "Other"
+    type: String,
+    required: true,
+    enum: [
+        "Retirement",
+        "House",
+        "Education",
+        "Travel",
+        "Vehicle",
+        "Medical",
+        "Wedding",
+        "Business",
+        "Emergency Fund",
+        "Other"
         ]
     },
 
