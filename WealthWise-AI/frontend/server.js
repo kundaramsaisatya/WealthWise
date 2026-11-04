@@ -1711,6 +1711,16 @@ app.put("/goals/:id", requireAuth, async (req, res) => {
                 error: "Financial goal not found."
             });
         }
+        // Fetch the user's saved investment risk preference
+        const assessmentUser = await User.findById(
+            req.session.user.id
+        ).select("riskTolerance").lean();
+
+        if (!assessmentUser?.riskTolerance) {
+            return res.status(422).json({
+                error: "Please select your risk tolerance in Profile Settings before generating a personalized goal assessment."
+            });
+        }
 
         return res.json({
             message: "Financial goal updated successfully.",
@@ -2216,6 +2226,21 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
                 error: "No valid allocated holdings are available."
             });
         }
+        const targetDate = new Date(goal.targetDate);
+
+        const horizonYears = Number.isNaN(targetDate.getTime())
+            ? null
+            : Math.max(
+                0,
+                (targetDate.getTime() - Date.now()) /
+                (365.25 * 24 * 60 * 60 * 1000)
+            );
+
+        goalPortfolioPayload.profile = {
+            risk_tolerance: assessmentUser.riskTolerance,
+            goal: goal.category,
+            horizon_years: horizonYears
+        };
 
         // 6. Call the dedicated goal risk endpoint
         const riskResponse = await axios.post(
