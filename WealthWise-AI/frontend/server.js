@@ -2277,6 +2277,8 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
                 goal_allocated_value: riskData.total_value,
                 verified_total_value: portfolio.verifiedTotalValue,
                 is_partial: portfolio.isPartial,
+                risk_profile: riskData.profile_used,
+                risk_thresholds: riskData.thresholds,
                 goal_holding_count: riskData.holding_count,
                 verified_holding_count: portfolio.verifiedHoldingCount,
                 unverified_holding_count: portfolio.unverifiedHoldingCount,
