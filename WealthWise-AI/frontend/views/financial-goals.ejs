@@ -1,1004 +1,237 @@
-
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <title>Financial Goals | WealthWise AI</title>
-
-    <link rel="stylesheet" href="/style.css">
-
-    <style>
-        .goals-container {
-            padding: 30px;
-            max-width: 1200px;
-            margin: auto;
-        }
-
-        .goals-header {
-            margin: 25px 0;
-        }
-
-        .goals-header h1 {
-            margin: 8px 0;
-        }
-
-        .goals-header p {
-            color: #64748b;
-        }
-
-        .goal-form-card {
-            background: #fff;
-            padding: 25px;
-            border-radius: 14px;
-            border: 1px solid #e5e7eb;
-            margin-top: 25px;
-        }
-
-        .goal-form-card h3 {
-            margin-top: 0;
-            margin-bottom: 22px;
-        }
-
-        .goal-form {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 20px 16px;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .form-group label {
-            font-size: 14px;
-            font-weight: 600;
-            color: #26364b;
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 13px 14px;
-            border: 1px solid #dce2e8;
-            border-radius: 9px;
-            font-size: 14px;
-            background: #fff;
-            color: #26364b;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #07845f;
-            box-shadow: 0 0 0 3px rgba(7, 132, 95, 0.1);
-        }
-
-        .field-help {
-            color: #8491a3;
-            font-size: 11px;
-        }
-
-        .form-actions {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .form-actions button {
-            min-width: 150px;
-        }
-
-        .goal-message {
-            margin-top: 15px;
-            font-size: 14px;
-        }
-
-        .goal-message.success {
-            color: #07845f;
-        }
-
-        .goal-message.error {
-            color: #dc2626;
-        }
-
-        .goals-section {
-            margin-top: 35px;
-        }
-
-        .goals-section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .goal-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .goal-card {
-            background: #fff;
-            padding: 23px;
-            border-radius: 14px;
-            border: 1px solid #e5e7eb;
-        }
-
-        .goal-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 12px;
-        }
-
-        .goal-card h3 {
-            margin: 0 0 7px;
-            color: #172b45;
-            font-size: 18px;
-        }
-
-        .goal-category {
-            color: #64748b;
-            font-size: 12px;
-        }
-
-        .goal-status {
-            padding: 5px 9px;
-            border-radius: 20px;
-            font-size: 11px;
-            background: #dcfce7;
-            color: #166534;
-            white-space: nowrap;
-        }
-
-        .progress-label {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 22px;
-            font-size: 12px;
-            color: #64748b;
-        }
-
-        .progress-track {
-            height: 9px;
-            background: #e5e7eb;
-            border-radius: 20px;
-            margin: 10px 0 18px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: #07845f;
-            border-radius: 20px;
-        }
-
-        .goal-metric {
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            margin: 13px 0;
-            font-size: 13px;
-            color: #64748b;
-        }
-
-        .goal-metric strong {
-            color: #172b45;
-            text-align: right;
-        }
-
-        .goal-divider {
-            border: none;
-            border-top: 1px solid #edf0f3;
-            margin: 17px 0;
-        }
-
-        .goal-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .goal-actions button {
-            padding: 9px 15px;
-            border: none;
-            border-radius: 7px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .edit-btn {
-            background: #dbeafe;
-            color: #1d4ed8;
-        }
-
-        .delete-btn {
-            background: #fee2e2;
-            color: #b91c1c;
-        }
-
-        .empty-goals {
-            background: #fff;
-            border: 1px solid #e5e7eb;
-            border-radius: 12px;
-            padding: 35px;
-            text-align: center;
-            color: #64748b;
-        }
-
-        .empty-goals h3 {
-            color: #172b45;
-        }
-
-        .disclaimer {
-            margin-top: 30px;
-            font-size: 12px;
-            color: #8491a3;
-            line-height: 1.6;
-        }
-
-        @media(max-width: 650px) {
-            .goals-container {
-                padding: 16px;
-            }
-
-            .goal-form {
-                grid-template-columns: 1fr;
-            }
-
-            .goal-form-card {
-                padding: 18px;
-            }
-
-            .goals-section-header {
-                align-items: flex-start;
-            }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Financial Goals | WealthWise AI</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+.goals-container{max-width:1200px;margin:auto;padding:30px}.goals-header{margin:25px 0}.goals-header h1{margin:8px 0;color:#172b45}.goals-header p,.goal-category{color:#64748b}
+.goal-form-card,.goal-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px}.goal-form-card{margin-top:25px}.goal-form-card h3{margin:0 0 22px;color:#172b45}
+.goal-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 16px}.form-group{display:flex;flex-direction:column;gap:8px}.form-group label{font-size:14px;font-weight:600;color:#26364b}
+.form-group input,.form-group select{box-sizing:border-box;width:100%;padding:13px 14px;border:1px solid #dce2e8;border-radius:9px;font-size:14px;background:#fff;color:#26364b}.form-group input:focus,.form-group select:focus{outline:none;border-color:#07845f;box-shadow:0 0 0 3px #07845f1a}
+.field-help{font-size:11px;color:#8491a3}.form-actions,.goal-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.form-actions button{min-width:145px}.goal-message{margin-top:15px;font-size:14px}.goal-message.success{color:#07845f}.goal-message.error{color:#dc2626}
+.goals-section{margin-top:35px}.goals-section-header{display:flex;justify-content:space-between;align-items:center;gap:15px}.goal-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-top:20px}
+.goal-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.goal-card h3{margin:0 0 7px;color:#172b45;font-size:18px}.goal-category{font-size:12px}.goal-status{padding:5px 9px;border-radius:20px;font-size:11px;background:#dcfce7;color:#166534;white-space:nowrap}
+.progress-label{display:flex;justify-content:space-between;margin-top:22px;font-size:12px;color:#64748b}.progress-track{height:9px;background:#e5e7eb;border-radius:20px;margin:10px 0 18px;overflow:hidden}.progress-fill{height:100%;background:#07845f;border-radius:20px}
+.goal-metric{display:flex;justify-content:space-between;gap:10px;margin:13px 0;font-size:13px;color:#64748b}.goal-metric strong{color:#172b45;text-align:right}.goal-divider{border:0;border-top:1px solid #edf0f3;margin:17px 0}
+.goal-actions{margin-top:20px}.goal-actions button{padding:9px 12px;border:0;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600}.edit-btn{background:#dbeafe;color:#1d4ed8}.delete-btn{background:#fee2e2;color:#b91c1c}.allocate-btn{background:#dcfce7;color:#166534}
+.empty-goals{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:35px;text-align:center;color:#64748b}.empty-goals h3{color:#172b45}.disclaimer{margin-top:30px;font-size:12px;color:#8491a3;line-height:1.6}
+.allocation-modal{position:fixed;inset:0;z-index:1000;background:#0f172a99;display:flex;justify-content:center;align-items:center;padding:15px}.allocation-modal[hidden]{display:none}
+.allocation-dialog{background:#fff;width:100%;max-width:780px;max-height:88vh;overflow-y:auto;padding:25px;border-radius:16px;box-shadow:0 20px 60px #0f172a33}
+.allocation-header{display:flex;justify-content:space-between;align-items:flex-start;gap:15px}.allocation-header h2{margin:0 0 7px;color:#172b45}.allocation-header p{margin:0;color:#64748b;font-size:13px}
+.icon-close{border:0;background:#f1f5f9;border-radius:8px;font-size:23px;cursor:pointer;padding:7px 12px;color:#334155}
+.allocation-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#f0fdf4;padding:16px;border-radius:10px;margin:20px 0;color:#166534}.allocation-summary strong{font-size:18px}
+.allocation-list{display:grid;gap:12px}.allocation-row{border:1px solid #e5e7eb;border-radius:11px;padding:15px}.allocation-row h4{margin:0 0 6px;color:#172b45}.allocation-type{font-size:11px;color:#64748b}
+.allocation-details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:13px 0;font-size:12px;color:#64748b}.allocation-details strong{display:block;color:#334155;font-size:13px;margin-top:4px}
+.allocation-row label{display:block;font-size:12px;font-weight:600;color:#334155;margin-bottom:7px}.allocation-input{box-sizing:border-box;width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}
+.allocation-input:focus{outline:none;border-color:#07845f;box-shadow:0 0 0 3px #07845f1a}.allocation-row-error{font-size:11px;color:#dc2626;margin-top:5px;min-height:14px}
+.allocation-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}.allocation-message{font-size:13px;margin:12px 0;color:#dc2626}.allocation-message.success{color:#07845f}
+.allocation-empty{padding:25px;text-align:center;color:#64748b;background:#f8fafc;border-radius:10px}.allocation-note{font-size:11px;color:#8491a3;line-height:1.5;margin-top:14px}
+@media(max-width:650px){.goals-container{padding:16px}.goal-form{grid-template-columns:1fr}.goal-form-card{padding:18px}.goals-section-header{align-items:flex-start}.allocation-dialog{padding:17px}.allocation-details{grid-template-columns:1fr 1fr}.allocation-actions{flex-direction:column-reverse}.allocation-actions button{width:100%}.goal-actions button{flex:1}}
+</style>
 </head>
-
 <body>
-
 <div class="goals-container">
-
-    <a href="/" class="secondary-btn">
-        ← Back to Dashboard
-    </a>
-
-    <div class="goals-header">
-
-        <span class="eyebrow">FINANCIAL PLANNING</span>
-
-        <h1>Financial Goals</h1>
-
-        <p>
-            Plan, track and monitor your financial milestones.
-        </p>
-
-    </div>
-
-
-    <!-- CREATE GOAL FORM -->
-
-    <div class="goal-form-card">
-
-        <h3 id="form-title">
-            Create a Financial Goal
-        </h3>
-
-        <form id="goal-form" class="goal-form">
-
-            <div class="form-group">
-
-                <label for="goal-name">
-                    Goal Name
-                </label>
-
-                <input
-                    id="goal-name"
-                    name="name"
-                    type="text"
-                    placeholder="e.g. Buy a House"
-                    maxlength="100"
-                    required
-                >
-
-            </div>
-
-
-            <div class="form-group">
-
-                <label for="goal-category">
-                    Goal Category
-                </label>
-
-                <select
-                    id="goal-category"
-                    name="category"
-                    required
-                >
-                    <option value="">Select category</option>
-                    <option>Retirement</option>
-                    <option>House</option>
-                    <option>Education</option>
-                    <option>Travel</option>
-                    <option>Emergency Fund</option>
-                    <option>Other</option>
-                </select>
-
-            </div>
-
-
-            <div class="form-group">
-
-                <label for="target-amount">
-                    Target Amount (₹)
-                </label>
-
-                <input
-                    id="target-amount"
-                    name="targetAmount"
-                    type="number"
-                    placeholder="e.g. 5000000"
-                    min="1"
-                    step="0.01"
-                    required
-                >
-
-            </div>
-
-
-            <div class="form-group">
-
-                <label for="current-savings">
-                    Current Savings (₹)
-                </label>
-
-                <input
-                    id="current-savings"
-                    name="currentSavings"
-                    type="number"
-                    placeholder="e.g. 500000"
-                    min="0"
-                    step="0.01"
-                    value="0"
-                >
-
-            </div>
-
-
-            <div class="form-group">
-
-                <label for="target-date">
-                    Target Date
-                </label>
-
-                <input
-                    id="target-date"
-                    name="targetDate"
-                    type="date"
-                    required
-                >
-
-            </div>
-
-
-            <div class="form-group">
-
-                <label for="monthly-contribution">
-                    Planned Monthly Contribution (₹)
-                </label>
-
-                <input
-                    id="monthly-contribution"
-                    name="monthlyContribution"
-                    type="number"
-                    placeholder="e.g. 25000"
-                    min="0"
-                    step="0.01"
-                    value="0"
-                >
-
-            </div>
-
-
-            <div class="form-group">
-
-                <label for="inflation-rate">
-                    Expected Inflation Rate (%)
-                </label>
-
-                <input
-                    id="inflation-rate"
-                    name="inflationRate"
-                    type="number"
-                    min="0"
-                    max="30"
-                    step="0.1"
-                    value="6"
-                >
-
-                <span class="field-help">
-                    Assumed yearly increase in goal cost.
-                </span>
-
-            </div>
-
-
-            <div class="form-group">
-
-                <label for="expected-return">
-                    Expected Annual Return (%)
-                </label>
-
-                <input
-                    id="expected-return"
-                    name="expectedAnnualReturn"
-                    type="number"
-                    min="0"
-                    max="50"
-                    step="0.1"
-                    value="10"
-                >
-
-                <span class="field-help">
-                    Illustrative annual investment return assumption.
-                </span>
-
-            </div>
-
-
-            <div class="form-actions">
-
-                <button
-                    type="submit"
-                    class="primary-btn"
-                    id="save-btn"
-                >
-                    Create Goal
-                </button>
-
-                <button
-                    type="button"
-                    class="secondary-btn"
-                    id="cancel-edit"
-                    hidden
-                >
-                    Cancel Edit
-                </button>
-
-            </div>
-
-        </form>
-
-        <p
-            id="goal-message"
-            class="goal-message"
-            role="status"
-            aria-live="polite"
-        ></p>
-
-    </div>
-
-
-    <!-- GOALS LIST -->
-
-    <section class="goals-section">
-
-        <div class="goals-section-header">
-
-            <h2>Your Financial Goals</h2>
-
-            <span id="goal-count">
-                0 goals
-            </span>
-
-        </div>
-
-        <div id="goal-list" class="goal-grid">
-            Loading goals...
-        </div>
-
-    </section>
-
-
-    <p class="disclaimer">
-        Financial projections are estimates based on the assumptions entered.
-        Actual investment returns and inflation may differ.
-        These calculations are illustrative and are not investment advice.
-    </p>
-
+<a href="/" class="secondary-btn">← Back to Dashboard</a>
+<header class="goals-header"><span class="eyebrow">FINANCIAL PLANNING</span><h1>Financial Goals</h1><p>Plan, track and monitor your financial milestones.</p></header>
+
+<div class="goal-form-card">
+<h3 id="form-title">Create a Financial Goal</h3>
+<form id="goal-form" class="goal-form">
+<div class="form-group"><label for="goal-name">Goal Name</label><input id="goal-name" name="name" type="text" placeholder="e.g. Buy a House" maxlength="100" required></div>
+<div class="form-group"><label for="goal-category">Goal Category</label><select id="goal-category" name="category" required><option value="">Select category</option><option>Retirement</option><option>House</option><option>Education</option><option>Travel</option><option>Emergency Fund</option><option>Other</option></select></div>
+<div class="form-group"><label for="target-amount">Target Amount (₹)</label><input id="target-amount" name="targetAmount" type="number" min="1" step="0.01" placeholder="e.g. 5000000" required></div>
+<div class="form-group"><label for="current-savings">Current Savings (₹)</label><input id="current-savings" name="currentSavings" type="number" min="0" step="0.01" value="0"><span class="field-help">Enter savings kept separately from portfolio holdings allocated below.</span></div>
+<div class="form-group"><label for="target-date">Target Date</label><input id="target-date" name="targetDate" type="date" required></div>
+<div class="form-group"><label for="monthly-contribution">Planned Monthly Contribution (₹)</label><input id="monthly-contribution" name="monthlyContribution" type="number" min="0" step="0.01" value="0"></div>
+<div class="form-group"><label for="inflation-rate">Expected Inflation Rate (%)</label><input id="inflation-rate" name="inflationRate" type="number" min="0" max="30" step="0.1" value="6"><span class="field-help">Assumed yearly increase in goal cost.</span></div>
+<div class="form-group"><label for="expected-return">Expected Annual Return (%)</label><input id="expected-return" name="expectedAnnualReturn" type="number" min="0" max="50" step="0.1" value="10"><span class="field-help">Illustrative annual investment return assumption.</span></div>
+<div class="form-actions"><button type="submit" class="primary-btn" id="save-btn">Create Goal</button><button type="button" class="secondary-btn" id="cancel-edit" hidden>Cancel Edit</button></div>
+</form>
+<p id="goal-message" class="goal-message" role="status" aria-live="polite"></p>
 </div>
 
+<section class="goals-section"><div class="goals-section-header"><h2>Your Financial Goals</h2><span id="goal-count">0 goals</span></div><div id="goal-list" class="goal-grid">Loading goals...</div></section>
+<p class="disclaimer">Financial projections are estimates based on the assumptions entered. Actual investment returns and inflation may differ. These calculations are illustrative and are not investment advice.</p>
+</div>
+
+<div id="allocation-modal" class="allocation-modal" hidden>
+<div class="allocation-dialog" role="dialog" aria-modal="true" aria-labelledby="allocation-title">
+<div class="allocation-header"><div><h2 id="allocation-title">Allocate Portfolio Holdings</h2><p id="allocation-goal-name"></p></div><button type="button" class="icon-close" id="close-allocation" aria-label="Close">×</button></div>
+<p id="allocation-message" class="allocation-message" role="status" aria-live="polite"></p>
+<div class="allocation-summary"><span>New total allocated to this goal</span><strong id="allocation-total">₹0</strong></div>
+<div id="allocation-holdings" class="allocation-list">Loading verified holdings...</div>
+<p class="allocation-note">Only verified holdings are shown. Amounts already assigned to other goals cannot be allocated again. Saving replaces this goal's previous allocation.</p>
+<div class="allocation-actions"><button type="button" class="secondary-btn" id="cancel-allocation">Cancel</button><button type="button" class="primary-btn" id="save-allocation">Save Allocations</button></div>
+</div>
+</div>
 
 <script>
-
-    const form = document.getElementById("goal-form");
-
-    const goalList = document.getElementById("goal-list");
-
-    const message = document.getElementById("goal-message");
-
-    const saveButton = document.getElementById("save-btn");
-
-    let editingId = null;
-
-    let goals = [];
-
-
-    // CURRENCY FORMATTER
-
-    function currency(value) {
-
-        return "₹" + Number(value).toLocaleString("en-IN", {
-            maximumFractionDigits: 0
-        });
-
-    }
-
-
-    // SAFE HTML TEXT
-
-    function escapeHTML(value) {
-
-        return String(value ?? "").replace(/[&<>"']/g, char => ({
-            "&": "&amp;",
-            "<": "&lt;",
-            ">": "&gt;",
-            '"': "&quot;",
-            "'": "&#39;"
-        })[char]);
-
-    }
-
-
-    // MESSAGE HANDLER
-
-    function showMessage(text, type) {
-
-        message.textContent = text;
-
-        message.className = "goal-message " + type;
-
-    }
-
-
-    // LOAD GOALS
-
-    async function loadGoals() {
-
-        goalList.textContent = "Loading goals...";
-
-        try {
-
-            const response = await fetch("/goals");
-
-            if (!response.ok) {
-                throw new Error("Unable to load financial goals.");
-            }
-
-            const data = await response.json();
-
-            goals = data.goals || [];
-
-            document.getElementById("goal-count").textContent =
-                `${goals.length} goals`;
-
-            renderGoals();
-
-        } catch (error) {
-
-            goalList.textContent = error.message;
-
-        }
-
-    }
-
-
-    // RENDER GOAL CARDS
-
-    function renderGoals() {
-
-        if (!goals.length) {
-
-            goalList.innerHTML = `
-                <div class="empty-goals">
-                    <h3>No financial goals yet</h3>
-                    <p>
-                        Create your first financial goal using the form above.
-                    </p>
-                </div>
-            `;
-
-            return;
-
-        }
-
-
-        goalList.innerHTML = goals.map(goal => {
-
-            const plan = goal.plan;
-
-            const progress = Math.min(
-                100,
-                Math.max(
-                    0,
-                    Number(plan.projected_progress_percentage) || 0
-                )
-            );
-
-            return `
-
-                <div class="goal-card">
-
-                    <div class="goal-card-header">
-
-                        <div>
-
-                            <h3>${escapeHTML(goal.name)}</h3>
-
-                            <span class="goal-category">
-                                ${escapeHTML(goal.category)}
-                            </span>
-
-                        </div>
-
-                        <span class="goal-status">
-                            ${escapeHTML(goal.status)}
-                        </span>
-
-                    </div>
-
-
-                    <div class="progress-label">
-
-                        <span>Projected progress</span>
-
-                        <strong>${progress.toFixed(1)}%</strong>
-
-                    </div>
-
-
-                    <div class="progress-track">
-
-                        <div
-                            class="progress-fill"
-                            style="width:${progress}%"
-                        ></div>
-
-                    </div>
-
-
-                    <div class="goal-metric">
-
-                        <span>Target amount today</span>
-
-                        <strong>
-                            ${currency(goal.targetAmount)}
-                        </strong>
-
-                    </div>
-
-
-                    <div class="goal-metric">
-
-                        <span>Future target</span>
-
-                        <strong>
-                            ${currency(plan.future_target)}
-                        </strong>
-
-                    </div>
-
-
-                    <div class="goal-metric">
-
-                        <span>Current savings</span>
-
-                        <strong>
-                            ${currency(goal.currentSavings)}
-                        </strong>
-
-                    </div>
-
-
-                    <hr class="goal-divider">
-
-
-                    <div class="goal-metric">
-
-                        <span>Required monthly investment</span>
-
-                        <strong>
-                            ${currency(plan.required_monthly_investment)}
-                        </strong>
-
-                    </div>
-
-
-                    <div class="goal-metric">
-
-                        <span>Planned monthly contribution</span>
-
-                        <strong>
-                            ${currency(goal.monthlyContribution)}
-                        </strong>
-
-                    </div>
-
-
-                    <div class="goal-metric">
-
-                        <span>Time remaining</span>
-
-                        <strong>
-                            ${plan.months_remaining} months
-                        </strong>
-
-                    </div>
-
-
-                    <div class="goal-actions">
-
-                        <button
-                            type="button"
-                            class="edit-btn"
-                            onclick="editGoal('${goal._id}')"
-                        >
-                            Edit
-                        </button>
-
-                        <button
-                            type="button"
-                            class="delete-btn"
-                            onclick="deleteGoal('${goal._id}')"
-                        >
-                            Delete
-                        </button>
-
-                    </div>
-
-                </div>
-
-            `;
-
-        }).join("");
-
-    }
-
-
-    // CREATE OR UPDATE GOAL
-
-    form.addEventListener("submit", async function(event) {
-
-        event.preventDefault();
-
-        showMessage("", "");
-
-        const formData = new FormData(form);
-
-        const payload = Object.fromEntries(formData.entries());
-
-
-        // Convert numeric fields
-
-        const numericFields = [
-            "targetAmount",
-            "currentSavings",
-            "monthlyContribution",
-            "inflationRate",
-            "expectedAnnualReturn"
-        ];
-
-        numericFields.forEach(field => {
-
-            payload[field] = Number(payload[field]);
-
-        });
-
-
-        try {
-
-            saveButton.disabled = true;
-
-            saveButton.textContent = "Saving...";
-
-
-            const response = await fetch(
-                editingId
-                    ? `/goals/${editingId}`
-                    : "/goals",
-                {
-                    method: editingId ? "PUT" : "POST",
-
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-
-                    body: JSON.stringify(payload)
-                }
-            );
-
-
-            const result = await response.json();
-
-
-            if (!response.ok) {
-
-                throw new Error(
-                    result.errors?.join(" ") ||
-                    result.error ||
-                    "Unable to save financial goal."
-                );
-
-            }
-
-
-            const successMessage = result.message;
-
-            resetForm();
-
-            showMessage(successMessage, "success");
-
-            await loadGoals();
-
-        } catch (error) {
-
-            showMessage(error.message, "error");
-
-        } finally {
-
-            saveButton.disabled = false;
-
-            saveButton.textContent = editingId
-                ? "Update Goal"
-                : "Create Goal";
-
-        }
-
-    });
-
-
-    // EDIT GOAL
-
-    function editGoal(id) {
-
-        const goal = goals.find(item => item._id === id);
-
-        if (!goal) return;
-
-        editingId = id;
-
-
-        form.elements["name"].value = goal.name;
-
-        form.elements["category"].value = goal.category;
-
-        form.elements["targetAmount"].value = goal.targetAmount;
-
-        form.elements["currentSavings"].value = goal.currentSavings;
-
-        form.elements["targetDate"].value =
-            new Date(goal.targetDate).toISOString().slice(0, 10);
-
-        form.elements["monthlyContribution"].value =
-            goal.monthlyContribution;
-
-        form.elements["inflationRate"].value =
-            goal.inflationRate;
-
-        form.elements["expectedAnnualReturn"].value =
-            goal.expectedAnnualReturn;
-
-
-        document.getElementById("form-title").textContent =
-            "Edit Financial Goal";
-
-        saveButton.textContent = "Update Goal";
-
-        document.getElementById("cancel-edit").hidden = false;
-
-
-        showMessage("", "");
-
-        window.scrollTo({
-            top: 0,
-            behavior: "smooth"
-        });
-
-    }
-
-
-    // DELETE GOAL
-
-    async function deleteGoal(id) {
-
-        const confirmed = confirm(
-            "Are you sure you want to delete this financial goal?"
-        );
-
-        if (!confirmed) return;
-
-
-        try {
-
-            const response = await fetch(`/goals/${id}`, {
-                method: "DELETE"
-            });
-
-            const result = await response.json();
-
-
-            if (!response.ok) {
-
-                throw new Error(
-                    result.error || "Unable to delete goal."
-                );
-
-            }
-
-
-            showMessage(result.message, "success");
-
-            await loadGoals();
-
-        } catch (error) {
-
-            showMessage(error.message, "error");
-
-        }
-
-    }
-
-
-    // RESET FORM
-
-    function resetForm() {
-
-        form.reset();
-
-        editingId = null;
-
-
-        document.getElementById("form-title").textContent =
-            "Create a Financial Goal";
-
-        saveButton.textContent = "Create Goal";
-
-        document.getElementById("cancel-edit").hidden = true;
-
-    }
-
-
-    // CANCEL EDIT
-
-    document.getElementById("cancel-edit").addEventListener(
-        "click",
-        function() {
-
-            resetForm();
-
-            showMessage("", "");
-
-        }
-    );
-
-
-    // INITIAL LOAD
-
-    loadGoals();
-
+const form=document.getElementById("goal-form");
+const goalList=document.getElementById("goal-list");
+const message=document.getElementById("goal-message");
+const saveButton=document.getElementById("save-btn");
+const allocationModal=document.getElementById("allocation-modal");
+const allocationGoalName=document.getElementById("allocation-goal-name");
+const allocationMessage=document.getElementById("allocation-message");
+const allocationList=document.getElementById("allocation-holdings");
+const allocationTotal=document.getElementById("allocation-total");
+const allocationSaveButton=document.getElementById("save-allocation");
+let editingId=null,goals=[],activeAllocationGoalId=null,allocationHoldings=[];
+
+function currency(value){const n=Number(value);return Number.isFinite(n)?"₹"+n.toLocaleString("en-IN",{maximumFractionDigits:2}):"N/A";}
+function escapeHTML(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function showMessage(text,type){message.textContent=text;message.className="goal-message "+(type||"");}
+function showAllocationMessage(text,type){allocationMessage.textContent=text;allocationMessage.className="allocation-message "+(type||"");}
+
+async function loadGoals(){
+ goalList.textContent="Loading goals...";
+ try{
+  const response=await fetch("/goals");
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Unable to load financial goals.");
+  goals=Array.isArray(data.goals)?data.goals:[];
+  document.getElementById("goal-count").textContent=`${goals.length} ${goals.length===1?"goal":"goals"}`;
+  renderGoals();
+ }catch(error){goalList.textContent=error.message;}
+}
+
+function renderGoals(){
+ if(!goals.length){goalList.innerHTML='<div class="empty-goals"><h3>No financial goals yet</h3><p>Create your first financial goal using the form above.</p></div>';return;}
+ goalList.innerHTML=goals.map(goal=>{
+  const plan=goal.plan||{};
+  const progress=Math.min(100,Math.max(0,Number(plan.projected_progress_percentage)||0));
+  return `<div class="goal-card">
+   <div class="goal-card-header"><div><h3>${escapeHTML(goal.name)}</h3><span class="goal-category">${escapeHTML(goal.category)}</span></div><span class="goal-status">${escapeHTML(goal.status)}</span></div>
+   <div class="progress-label"><span>Projected progress</span><strong>${progress.toFixed(1)}%</strong></div>
+   <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+   <div class="goal-metric"><span>Target amount today</span><strong>${currency(goal.targetAmount)}</strong></div>
+   <div class="goal-metric"><span>Future target</span><strong>${currency(plan.future_target)}</strong></div>
+   <div class="goal-metric"><span>Current savings</span><strong>${currency(goal.currentSavings)}</strong></div>
+   <div class="goal-metric"><span>Portfolio allocated</span><strong>${currency(goal.portfolioAllocatedAmount||0)}</strong></div>
+   <hr class="goal-divider">
+   <div class="goal-metric"><span>Required monthly investment</span><strong>${currency(plan.required_monthly_investment)}</strong></div>
+   <div class="goal-metric"><span>Planned monthly contribution</span><strong>${currency(goal.monthlyContribution)}</strong></div>
+   <div class="goal-metric"><span>Time remaining</span><strong>${Number(plan.months_remaining)||0} months</strong></div>
+   <div class="goal-actions">
+    <button type="button" class="allocate-btn" onclick="openAllocation('${goal._id}')">Allocate Holdings</button>
+    <button type="button" class="edit-btn" onclick="editGoal('${goal._id}')">Edit</button>
+    <button type="button" class="delete-btn" onclick="deleteGoal('${goal._id}')">Delete</button>
+   </div></div>`;
+ }).join("");
+}
+
+form.addEventListener("submit",async event=>{
+ event.preventDefault();showMessage("","");
+ const payload=Object.fromEntries(new FormData(form).entries());
+ ["targetAmount","currentSavings","monthlyContribution","inflationRate","expectedAnnualReturn"].forEach(k=>payload[k]=Number(payload[k]));
+ const wasEditing=Boolean(editingId);saveButton.disabled=true;saveButton.textContent="Saving...";
+ try{
+  const response=await fetch(wasEditing?`/goals/${editingId}`:"/goals",{method:wasEditing?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  const result=await response.json();
+  if(!response.ok)throw new Error(result.errors?.join(" ")||result.error||"Unable to save financial goal.");
+  resetForm();showMessage(result.message||"Goal saved successfully.","success");await loadGoals();
+ }catch(error){showMessage(error.message,"error");}
+ finally{saveButton.disabled=false;saveButton.textContent=editingId?"Update Goal":"Create Goal";}
+});
+
+function editGoal(id){
+ const goal=goals.find(item=>item._id===id);if(!goal)return;editingId=id;
+ form.elements.name.value=goal.name||"";form.elements.category.value=goal.category||"";
+ form.elements.targetAmount.value=goal.targetAmount??0;form.elements.currentSavings.value=goal.currentSavings??0;
+ form.elements.targetDate.value=goal.targetDate?new Date(goal.targetDate).toISOString().slice(0,10):"";
+ form.elements.monthlyContribution.value=goal.monthlyContribution??0;form.elements.inflationRate.value=goal.inflationRate??6;
+ form.elements.expectedAnnualReturn.value=goal.expectedAnnualReturn??10;
+ document.getElementById("form-title").textContent="Edit Financial Goal";
+ saveButton.textContent="Update Goal";document.getElementById("cancel-edit").hidden=false;
+ showMessage("","");window.scrollTo({top:0,behavior:"smooth"});
+}
+
+async function deleteGoal(id){
+ if(!confirm("Are you sure you want to delete this financial goal?"))return;
+ try{
+  const response=await fetch(`/goals/${id}`,{method:"DELETE"});const result=await response.json();
+  if(!response.ok)throw new Error(result.error||"Unable to delete goal.");
+  showMessage(result.message||"Goal deleted.","success");await loadGoals();
+ }catch(error){showMessage(error.message,"error");}
+}
+
+function resetForm(){form.reset();editingId=null;document.getElementById("form-title").textContent="Create a Financial Goal";saveButton.textContent="Create Goal";document.getElementById("cancel-edit").hidden=true;}
+document.getElementById("cancel-edit").addEventListener("click",()=>{resetForm();showMessage("","");});
+
+async function openAllocation(goalId){
+ const goal=goals.find(item=>item._id===goalId);if(!goal)return;
+ activeAllocationGoalId=goalId;allocationGoalName.textContent=`Goal: ${goal.name}`;
+ allocationModal.hidden=false;allocationList.textContent="Loading verified holdings...";
+ allocationTotal.textContent=currency(0);showAllocationMessage("","");
+ try{
+  const response=await fetch(`/goals/${goalId}/holdings`);const data=await response.json();
+  if(!response.ok)throw new Error(data.error||"Unable to load holdings.");
+  allocationHoldings=Array.isArray(data.holdings)?data.holdings:[];
+  renderAllocationHoldings();
+ }catch(error){allocationHoldings=[];allocationList.innerHTML=`<div class="allocation-empty">${escapeHTML(error.message)}</div>`;}
+}
+
+function renderAllocationHoldings(){
+ if(!allocationHoldings.length){allocationList.innerHTML='<div class="allocation-empty">No verified portfolio holdings are available to allocate.</div>';updateAllocationTotal();return;}
+ allocationList.innerHTML=allocationHoldings.map((h,i)=>{
+  const current=Number(h.currentValue)||0,others=Number(h.allocatedToOtherGoals)||0,max=Math.max(0,current-others),existing=Number(h.allocatedToThisGoal)||0;
+  return `<div class="allocation-row">
+   <h4>${escapeHTML(h.name)}</h4><span class="allocation-type">${escapeHTML(h.assetClass||"Other")}${h.subCategory?" · "+escapeHTML(h.subCategory):""}</span>
+   <div class="allocation-details">
+    <div>Current value<strong>${currency(current)}</strong></div>
+    <div>Other goals<strong>${currency(others)}</strong></div>
+    <div>Maximum available<strong>${currency(max)}</strong></div>
+   </div>
+   <label for="allocation-${i}">Amount to allocate (₹)</label>
+   <input class="allocation-input" id="allocation-${i}" type="number" min="0" max="${max}" step="0.01" value="${existing>0?existing:""}" placeholder="Enter amount" data-index="${i}">
+   <div class="allocation-row-error" id="allocation-error-${i}"></div>
+  </div>`;
+ }).join("");
+ allocationList.querySelectorAll(".allocation-input").forEach(input=>input.addEventListener("input",()=>{validateAllocationInput(input);updateAllocationTotal();}));
+ updateAllocationTotal();
+}
+
+function validateAllocationInput(input){
+ const i=Number(input.dataset.index),h=allocationHoldings[i],amount=input.value===""?0:Number(input.value);
+ const max=Math.max(0,Number(h.currentValue)-(Number(h.allocatedToOtherGoals)||0));
+ const error=document.getElementById(`allocation-error-${i}`);
+ if(!Number.isFinite(amount)||amount<0){error.textContent="Enter a valid non-negative amount.";return false;}
+ if(amount>max+0.001){error.textContent=`Maximum available: ${currency(max)}`;return false;}
+ error.textContent="";return true;
+}
+
+function updateAllocationTotal(){
+ let total=0;allocationList.querySelectorAll(".allocation-input").forEach(input=>{const n=Number(input.value);if(Number.isFinite(n)&&n>0)total+=n;});
+ allocationTotal.textContent=currency(total);
+}
+
+allocationSaveButton.addEventListener("click",async()=>{
+ if(!activeAllocationGoalId)return;
+ const inputs=[...allocationList.querySelectorAll(".allocation-input")],allocations=[];let valid=true;
+ for(const input of inputs){
+  if(!validateAllocationInput(input)){valid=false;continue;}
+  const amount=input.value===""?0:Number(input.value),holding=allocationHoldings[Number(input.dataset.index)];
+  if(amount>0)allocations.push({holdingKey:holding.holdingKey,amount:Number(amount.toFixed(2))});
+ }
+ if(!valid){showAllocationMessage("Please correct the highlighted allocation amounts.","error");return;}
+ allocationSaveButton.disabled=true;allocationSaveButton.textContent="Saving...";showAllocationMessage("","");
+ try{
+  const response=await fetch(`/goals/${activeAllocationGoalId}/allocations`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({allocations})});
+  const result=await response.json();if(!response.ok)throw new Error(result.error||"Unable to save allocations.");
+  showAllocationMessage(result.message||"Allocations saved successfully.","success");await loadGoals();
+  setTimeout(closeAllocationModal,700);
+ }catch(error){showAllocationMessage(error.message,"error");}
+ finally{allocationSaveButton.disabled=false;allocationSaveButton.textContent="Save Allocations";}
+});
+
+function closeAllocationModal(){allocationModal.hidden=true;activeAllocationGoalId=null;allocationHoldings=[];allocationList.innerHTML="";showAllocationMessage("","");}
+document.getElementById("close-allocation").addEventListener("click",closeAllocationModal);
+document.getElementById("cancel-allocation").addEventListener("click",closeAllocationModal);
+allocationModal.addEventListener("click",event=>{if(event.target===allocationModal)closeAllocationModal();});
+document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!allocationModal.hidden)closeAllocationModal();});
+loadGoals();
 </script>
-
 </body>
 </html>
