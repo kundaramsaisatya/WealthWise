@@ -1,72 +1,297 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>WealthWise AI | Profile Settings</title>
+
     <link rel="stylesheet" href="/style.css">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #f4f6fb;
+            color: #1e293b;
+        }
+
+        .profile-wrapper {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 30px 16px;
+        }
+
+        .profile-card {
+            width: 100%;
+            max-width: 650px;
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 18px;
+            box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+        }
+
+        .profile-header {
+            margin-bottom: 30px;
+        }
+
+        .brand {
+            color: #2563eb;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            margin-bottom: 25px;
+        }
+
+        .profile-header h1 {
+            font-size: 29px;
+            margin: 0 0 10px;
+        }
+
+        .profile-header p {
+            color: #64748b;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .success-message {
+            padding: 13px 16px;
+            background: #ecfdf5;
+            color: #047857;
+            border: 1px solid #a7f3d0;
+            border-radius: 9px;
+            margin-bottom: 22px;
+        }
+
+        .section-label {
+            display: block;
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+
+        .risk-options {
+            display: grid;
+            gap: 13px;
+        }
+
+        .risk-option {
+            display: block;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .risk-option input {
+            position: absolute;
+            opacity: 0;
+        }
+
+        .risk-content {
+            padding: 18px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            transition: 0.2s;
+        }
+
+        .risk-option input:checked + .risk-content {
+            border: 2px solid #2563eb;
+            background: #eff6ff;
+        }
+
+        .risk-content h3 {
+            margin: 0 0 7px;
+            font-size: 16px;
+        }
+
+        .risk-content p {
+            color: #64748b;
+            font-size: 13px;
+            line-height: 1.5;
+            margin: 0;
+        }
+
+        .risk-content small {
+            display: block;
+            color: #2563eb;
+            margin-top: 9px;
+            font-weight: 600;
+        }
+
+        .save-btn {
+            width: 100%;
+            margin-top: 25px;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: #2563eb;
+            color: white;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .save-btn:hover {
+            background: #1d4ed8;
+        }
+
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 22px;
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .disclaimer {
+            margin-top: 25px;
+            padding: 13px;
+            background: #f8fafc;
+            border-radius: 9px;
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 600px) {
+            .profile-card {
+                padding: 25px 20px;
+            }
+
+            .profile-header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
 </head>
+
 <body>
 
-<div class="auth-container">
-    <form action="/profile/risk-tolerance"
-          method="POST"
-          class="auth-card">
+<div class="profile-wrapper">
 
-        <h1>Profile Settings</h1>
-        <p>Configure your investment risk preference.</p>
+    <div class="profile-card">
+
+        <div class="profile-header">
+            <div class="brand">WEALTHWISE AI</div>
+
+            <h1>Profile Settings</h1>
+
+            <p>
+                Personalize your portfolio risk analysis by selecting
+                your investment risk preference.
+            </p>
+        </div>
 
         <% if (success) { %>
-            <p style="color: green;">
-                Risk preference updated successfully.
-            </p>
+            <div class="success-message">
+                ✓ Risk preference updated successfully.
+            </div>
         <% } %>
 
-        <label for="riskTolerance">Risk Tolerance</label>
+        <form action="/profile/risk-tolerance" method="POST">
 
-        <select
-            name="riskTolerance"
-            id="riskTolerance"
-            required
-            style="width: 100%; padding: 12px; margin: 10px 0 20px;"
-        >
-            <option value="">Select your preference</option>
+            <label class="section-label">
+                Select Your Risk Tolerance
+            </label>
 
-            <option value="conservative"
-                <%= riskTolerance === "conservative" ? "selected" : "" %>>
-                Conservative
-            </option>
+            <div class="risk-options">
 
-            <option value="moderate"
-                <%= riskTolerance === "moderate" ? "selected" : "" %>>
-                Moderate
-            </option>
+                <label class="risk-option">
+                    <input
+                        type="radio"
+                        name="riskTolerance"
+                        value="conservative"
+                        <%= riskTolerance === "conservative" ? "checked" : "" %>
+                        required
+                    >
 
-            <option value="aggressive"
-                <%= riskTolerance === "aggressive" ? "selected" : "" %>>
-                Aggressive
-            </option>
-        </select>
+                    <div class="risk-content">
+                        <h3>Conservative</h3>
 
-        <p>
-            Conservative: Prioritizes lower portfolio risk.
-        </p>
+                        <p>
+                            Prioritizes lower portfolio risk and
+                            greater emphasis on capital preservation.
+                        </p>
 
-        <p>
-            Moderate: Balances risk and potential returns.
-        </p>
+                        <small>Lower risk preference</small>
+                    </div>
+                </label>
 
-        <p>
-            Aggressive: Accepts higher portfolio risk.
-        </p>
+                <label class="risk-option">
+                    <input
+                        type="radio"
+                        name="riskTolerance"
+                        value="moderate"
+                        <%= riskTolerance === "moderate" ? "checked" : "" %>
+                        required
+                    >
 
-        <button type="submit">Save Preferences</button>
+                    <div class="risk-content">
+                        <h3>Moderate</h3>
 
-        <p>
-            <a href="/">Back to Dashboard</a>
-        </p>
+                        <p>
+                            Seeks a balance between potential returns
+                            and portfolio risk.
+                        </p>
 
-    </form>
+                        <small>Balanced risk preference</small>
+                    </div>
+                </label>
+
+                <label class="risk-option">
+                    <input
+                        type="radio"
+                        name="riskTolerance"
+                        value="aggressive"
+                        <%= riskTolerance === "aggressive" ? "checked" : "" %>
+                        required
+                    >
+
+                    <div class="risk-content">
+                        <h3>Aggressive</h3>
+
+                        <p>
+                            Accepts higher portfolio fluctuations
+                            and greater investment risk.
+                        </p>
+
+                        <small>Higher risk preference</small>
+                    </div>
+                </label>
+
+            </div>
+
+            <button type="submit" class="save-btn">
+                Save Preferences →
+            </button>
+
+        </form>
+
+        <a href="/" class="back-link">
+            ← Back to Dashboard
+        </a>
+
+        <div class="disclaimer">
+            Your selected preference will configure risk-analysis
+            thresholds. It is not a guarantee of returns or a
+            personalized investment suitability assessment.
+        </div>
+
+    </div>
+
 </div>
 
 </body>
