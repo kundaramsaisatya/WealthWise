@@ -1,4 +1,3 @@
-
 import re
 import math
 from datetime import date, datetime
@@ -8,18 +7,25 @@ import pandas as pd
 # --------------------------------------------------
 # COLUMN ALIASES
 # --------------------------------------------------
+# Aliases are listed in priority order. When two columns in a sheet
+# map to the same field (for example "Security" and "Symbol"), the
+# column whose alias appears earliest in the list wins.
 
 COLUMN_ALIASES = {
     "name": [
-        "name", "symbol", "scrip name", "stock name",
-        "security name", "scheme name", "mutual fund",
-        "instrument", "fund name"
+        "fund name", "scheme name", "scheme",
+        "security name", "security",
+        "scrip name", "stock name", "mutual fund",
+        "instrument", "name", "symbol"
     ],
+
+    "symbol": ["symbol", "ticker"],
 
     "isin": ["isin", "isin code"],
 
     "quantity": [
-        "quantity", "qty", "units", "unit balance"
+        "closing units", "total qty", "quantity",
+        "qty", "units", "unit balance"
     ],
 
     "invested_value": [
@@ -37,13 +43,14 @@ COLUMN_ALIASES = {
     "profit_loss": [
         "p&l", "pnl", "gain/loss", "profit/loss",
         "unrealised p&l", "unrealized p&l",
+        "unrealised gain/loss", "unrealized gain/loss",
         "overall gain/loss"
     ],
 
     "profit_loss_percentage": [
         "unrealized p&l %", "unrealised p&l %",
         "profit/loss %", "gain/loss %",
-        "overall gain/loss %"
+        "overall gain/loss %", "return", "returns"
     ],
 
     "asset_class": [
@@ -59,15 +66,17 @@ COLUMN_ALIASES = {
     ],
 
     "source": [
-        "source", "broker", "fund house"
+        "source", "broker", "fund house", "amc"
     ],
 
     "average_nav": [
-        "average nav", "purchase nav", "average cost nav"
+        "average nav", "purchase nav", "average cost nav",
+        "avg cost", "average cost"
     ],
 
     "current_nav": [
-        "nav as on", "current nav", "latest nav"
+        "nav as on", "current nav", "latest nav",
+        "closing price"
     ]
 }
 
@@ -75,6 +84,10 @@ COLUMN_ALIASES = {
 # --------------------------------------------------
 # COLUMN NORMALIZATION
 # --------------------------------------------------
+
+# Currency tokens such as "(INR)" in "Cost Value (INR)" are ignored.
+CURRENCY_TOKENS = {"inr", "rs"}
+
 
 def normalize_column(column):
 
@@ -86,21 +99,29 @@ def normalize_column(column):
         column
     )
 
-    return " ".join(column.split())
+    tokens = [
+        token for token in column.split()
+        if token not in CURRENCY_TOKENS
+    ]
 
+    return " ".join(tokens)
+
+
+ALIAS_ORDER = {
+    field: [normalize_column(alias) for alias in aliases]
+    for field, aliases in COLUMN_ALIASES.items()
+}
 
 NORMALIZED_ALIASES = {
-    field: {
-        normalize_column(alias)
-        for alias in aliases
-    }
-    for field, aliases in COLUMN_ALIASES.items()
+    field: set(ordered)
+    for field, ordered in ALIAS_ORDER.items()
 }
 
 
 # --------------------------------------------------
 # STATEMENT DATE EXTRACTION
 # --------------------------------------------------
+
 
 DATE_LABELS = [
     "statement date",
@@ -114,6 +135,8 @@ DATE_LABELS = [
     "market value as on",
     "as of date",
     "as on date",
+    "as of",
+    "as on",
     "report date",
     "reporting date",
     "date of statement"
@@ -134,6 +157,25 @@ def normalize_report_date(value):
     if isinstance(value, date):
         return value.isoformat()
 
+    # Handle Excel serial date values.
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+
+        if not math.isfinite(float(value)):
+            return None
+
+        if 20000 <= value <= 80000:
+            try:
+                converted = pd.to_datetime(
+                    value,
+                    unit="D",
+                    origin="1899-12-30"
+                )
+                return converted.date().isoformat()
+            except (ValueError, OverflowError):
+                return None
+
+        return None
+
     if not isinstance(value, str):
         return None
 
@@ -142,24 +184,50 @@ def normalize_report_date(value):
     if not value:
         return None
 
-    # Accept unambiguous ISO dates.
+    # Standard ISO format.
     try:
         return date.fromisoformat(value).isoformat()
     except ValueError:
         pass
 
-    # Accept DD-MM-YYYY and DD/MM/YYYY.
-    for pattern in ("%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y"):
+    # Numeric date formats.
+    numeric_formats = [
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+        "%d.%m.%Y",
+        "%Y/%m/%d",
+        "%d-%m-%y",
+        "%d/%m/%y"
+    ]
+
+    for pattern in numeric_formats:
         try:
-            return datetime.strptime(value, pattern).date().isoformat()
+            return datetime.strptime(
+                value, pattern
+            ).date().isoformat()
         except ValueError:
             continue
 
-    # Accept YYYY/MM/DD.
-    try:
-        return datetime.strptime(value, "%Y/%m/%d").date().isoformat()
-    except ValueError:
-        return None
+    # Month-name formats.
+    month_formats = [
+        "%d-%b-%Y",
+        "%d %b %Y",
+        "%d-%B-%Y",
+        "%d %B %Y",
+        "%d-%b-%y",
+        "%d %b %y",
+        "%d/%b/%Y"
+    ]
+
+    for pattern in month_formats:
+        try:
+            return datetime.strptime(
+                value, pattern
+            ).date().isoformat()
+        except ValueError:
+            continue
+
+    return None
 
 
 def extract_date_from_text(value):
@@ -169,25 +237,36 @@ def extract_date_from_text(value):
 
     text = value.strip()
 
-    # Look for a date only when a recognized statement
-    # date label appears in the same cell.
+    if not text:
+        return None
+
     normalized = normalize_column(text)
 
-    if not any(label in normalized for label in DATE_LABELS):
+    if not any(
+        label in normalized
+        for label in DATE_LABELS
+    ):
         return None
 
     patterns = [
         r"\b\d{4}-\d{2}-\d{2}\b",
-        r"\b\d{2}[-/.]\d{2}[-/.]\d{4}\b",
-        r"\b\d{4}/\d{2}/\d{2}\b"
+        r"\b\d{2}[-/.]\d{2}[-/.]\d{2,4}\b",
+        r"\b\d{4}/\d{2}/\d{2}\b",
+        r"\b\d{1,2}[-/\s][A-Za-z]{3,9}[-/\s]\d{2,4}\b"
     ]
 
     for pattern in patterns:
 
-        match = re.search(pattern, text)
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE
+        )
 
         if match:
-            result = normalize_report_date(match.group())
+            result = normalize_report_date(
+                match.group()
+            )
 
             if result:
                 return result
@@ -199,8 +278,7 @@ def extract_sheet_report_date(df):
 
     candidates = []
 
-    # Inspect the first 30 rows, where statement metadata
-    # is normally located.
+    # Inspect the first 30 rows for statement metadata.
     for row_index in range(min(len(df), 30)):
 
         row = df.iloc[row_index].tolist()
@@ -210,18 +288,22 @@ def extract_sheet_report_date(df):
             if pd.isna(value):
                 continue
 
-            # A labelled date may be inside one cell.
-            embedded_date = extract_date_from_text(str(value))
+            # Date and label in the same cell.
+            embedded_date = extract_date_from_text(
+                str(value)
+            )
 
             if embedded_date:
                 candidates.append(embedded_date)
                 continue
 
-            # A recognized date label may have its date
-            # in the next cell.
+            # Date label in one cell, date in the next.
             normalized = normalize_column(value)
 
-            if any(label in normalized for label in DATE_LABELS):
+            if any(
+                label in normalized
+                for label in DATE_LABELS
+            ):
 
                 if column_index + 1 < len(row):
 
@@ -234,8 +316,7 @@ def extract_sheet_report_date(df):
 
     unique_dates = set(candidates)
 
-    # If multiple different statement dates are found,
-    # do not guess which one represents the portfolio.
+    # Never guess when multiple different dates exist.
     if len(unique_dates) == 1:
         return unique_dates.pop()
 
@@ -269,7 +350,8 @@ def identify_column(column):
     if normalized.startswith("value as of"):
         return "current_value"
 
-    if normalized.startswith("nav as on"):
+    # "NAV as on 31-Oct-2026", "NAV 31-Oct-2026"
+    if normalized.startswith("nav "):
         return "current_nav"
 
     return None
@@ -287,6 +369,52 @@ def map_columns(columns):
             mapped[column] = field
 
     return mapped
+
+
+def alias_rank(field, column):
+    """Lower rank = higher priority alias."""
+
+    ordered = ALIAS_ORDER.get(field, [])
+    normalized = normalize_column(column)
+
+    if normalized in ordered:
+        return ordered.index(normalized)
+
+    return len(ordered)
+
+
+def choose_unique_mapping(column_mapping):
+    """
+    One column per field. If several columns map to the same field,
+    the highest-priority alias wins. A losing "Symbol" column is kept
+    as the separate 'symbol' field instead of being discarded.
+    """
+
+    best = {}
+
+    for column, field in column_mapping.items():
+
+        rank = alias_rank(field, column)
+
+        if field not in best or rank < best[field][0]:
+            best[field] = (rank, column)
+
+    unique_mapping = {
+        column: field
+        for field, (_, column) in best.items()
+    }
+
+    for column, field in column_mapping.items():
+
+        if (
+            field == "name"
+            and column not in unique_mapping
+            and normalize_column(column) == "symbol"
+            and "symbol" not in unique_mapping.values()
+        ):
+            unique_mapping[column] = "symbol"
+
+    return unique_mapping
 
 
 # --------------------------------------------------
@@ -443,6 +571,59 @@ def is_total_row(name):
 
 
 # --------------------------------------------------
+# CATEGORY AND PROFIT / LOSS CLEANUP
+# --------------------------------------------------
+
+def split_category(asset_class, sub_category, isin):
+    """
+    Turn "Equity - Large Cap" into asset class "Equity" and
+    sub-category "Large Cap". Listed shares (ISIN starting with INE)
+    with no category are treated as Equity.
+    """
+
+    if asset_class:
+
+        parts = re.split(r"\s+[-–—]\s+", asset_class, maxsplit=1)
+
+        if len(parts) == 2:
+            asset_class = parts[0].strip()
+
+            if not sub_category:
+                sub_category = parts[1].strip()
+
+    elif isin and str(isin).upper().startswith("INE"):
+        asset_class = "Equity"
+
+        if not sub_category:
+            sub_category = "Listed Shares"
+
+    return asset_class, sub_category
+
+
+def reconcile_profit_loss(record):
+    """
+    Profit/loss and its percentage are recalculated from the invested
+    and current values, so a statement that stores returns as fractions
+    (0.1418 instead of 14.18) or labels them oddly cannot corrupt them.
+    """
+
+    invested = record["invested_value"]
+    current = record["current_value"]
+
+    if invested is None or current is None:
+        return
+
+    profit_loss = round(current - invested, 2)
+
+    record["profit_loss"] = profit_loss
+
+    record["profit_loss_percentage"] = (
+        round(profit_loss / invested * 100, 2)
+        if invested > 0 else None
+    )
+
+
+# --------------------------------------------------
 # EXTRACT ONE SHEET
 # --------------------------------------------------
 
@@ -480,9 +661,6 @@ def extract_sheet(workbook, sheet_name):
         return {
             "status": "headers_not_detected",
             "report_date": report_date,
-            "rows": df.fillna("").astype(str).to_dict(
-                orient="records"
-            ),
             "column_mapping": {},
             "holdings": []
         }
@@ -506,15 +684,7 @@ def extract_sheet(workbook, sheet_name):
         if column != "_source_row"
     ])
 
-    unique_mapping = {}
-    used_fields = set()
-
-    for original_column, field in column_mapping.items():
-
-        if field not in used_fields:
-
-            unique_mapping[original_column] = field
-            used_fields.add(field)
+    unique_mapping = choose_unique_mapping(column_mapping)
 
     data = data.rename(columns=unique_mapping)
 
@@ -522,6 +692,19 @@ def extract_sheet(workbook, sheet_name):
 
         return {
             "status": "name_column_missing",
+            "report_date": report_date,
+            "column_mapping": unique_mapping,
+            "holdings": []
+        }
+
+    # Only sheets that report a market/current value are holdings.
+    # Trades, transactions, realised P&L, dividends and corporate
+    # actions have no current value and must never be counted as
+    # holdings.
+    if "current_value" not in data.columns:
+
+        return {
+            "status": "not_a_holdings_sheet",
             "report_date": report_date,
             "column_mapping": unique_mapping,
             "holdings": []
@@ -539,20 +722,26 @@ def extract_sheet(workbook, sheet_name):
         if is_total_row(name):
             continue
 
+        isin = clean_text(row.get("isin"))
+
+        asset_class, sub_category = split_category(
+            clean_text(row.get("asset_class")),
+            clean_text(row.get("sub_category")),
+            isin
+        )
+
         record = {
             "name": name,
 
-            "asset_class": clean_text(
-                row.get("asset_class")
+            "symbol": clean_text(
+                row.get("symbol")
             ),
 
-            "sub_category": clean_text(
-                row.get("sub_category")
-            ),
+            "asset_class": asset_class,
 
-            "isin": clean_text(
-                row.get("isin")
-            ),
+            "sub_category": sub_category,
+
+            "isin": isin,
 
             "quantity": parse_numeric(
                 row.get("quantity")
@@ -607,6 +796,20 @@ def extract_sheet(workbook, sheet_name):
         if not has_investment_data:
             continue
 
+        reconcile_profit_loss(record)
+
+        # Cost values are on an average-cost basis, so cost / units is the
+        # average cost per unit when the statement does not print it.
+        if (
+            record["average_nav"] is None
+            and record["invested_value"]
+            and record["quantity"]
+        ):
+            record["average_nav"] = record["invested_value"] / record["quantity"]
+
+        if record["average_nav"] is not None:
+            record["average_nav"] = round(record["average_nav"], 4)
+
         records.append(record)
 
     return {
@@ -623,41 +826,40 @@ def extract_sheet(workbook, sheet_name):
 
 def extract_excel(file_path):
 
-    workbook = pd.ExcelFile(file_path)
-
     extracted_data = {}
     report_dates = []
 
-    for sheet_name in workbook.sheet_names:
+    with pd.ExcelFile(file_path) as workbook:
 
-        try:
+        for sheet_name in workbook.sheet_names:
 
-            sheet_result = extract_sheet(
-                workbook,
-                sheet_name
-            )
-
-            extracted_data[sheet_name] = sheet_result
-
-            if sheet_result.get("report_date"):
-                report_dates.append(
-                    sheet_result["report_date"]
+            try:
+                sheet_result = extract_sheet(
+                    workbook,
+                    sheet_name
                 )
 
-        except Exception as error:
+                extracted_data[sheet_name] = sheet_result
 
-            extracted_data[sheet_name] = {
-                "status": "extraction_error",
-                "report_date": None,
-                "error": str(error),
-                "column_mapping": {},
-                "holdings": []
-            }
+                if sheet_result.get("report_date"):
+                    report_dates.append(
+                        sheet_result["report_date"]
+                    )
+
+            except Exception as error:
+
+                extracted_data[sheet_name] = {
+                    "status": "extraction_error",
+                    "report_date": None,
+                    "error": str(error),
+                    "column_mapping": {},
+                    "holdings": []
+                }
 
     unique_dates = set(report_dates)
 
     report_date = (
-        unique_dates.pop()
+        next(iter(unique_dates))
         if len(unique_dates) == 1
         else None
     )

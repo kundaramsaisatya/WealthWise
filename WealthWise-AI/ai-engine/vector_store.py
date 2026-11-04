@@ -58,15 +58,16 @@ class VectorStore:
     def build_index(self, chunks):
 
         if not chunks:
-            raise ValueError(
-                "No document chunks provided."
-            )
+            raise ValueError("No document chunks provided.")
 
         for chunk in chunks:
 
             if not isinstance(chunk, dict):
+                raise ValueError("Invalid document chunk.")
+
+            if not chunk.get("document_id"):
                 raise ValueError(
-                    "Invalid document chunk."
+                    "Every chunk must have a document_id."
                 )
 
             if not isinstance(chunk.get("text"), str):
@@ -79,23 +80,23 @@ class VectorStore:
                     "Document chunk cannot be empty."
                 )
 
-        new_sources = {
-            chunk.get("source")
+        # Identify documents being added or replaced
+        new_document_ids = {
+            str(chunk["document_id"])
             for chunk in chunks
-            if chunk.get("source")
         }
 
-        # Preserve previously indexed sources.
+        # Preserve chunks belonging to other documents
         existing_documents = [
             document
             for document in self.documents
-            if document.get("source") not in new_sources
+            if str(document.get("document_id"))
+            not in new_document_ids
         ]
 
-        combined_documents = (
-            existing_documents + chunks
-        )
+        combined_documents = existing_documents + chunks
 
+        # Generate embeddings for all remaining chunks
         texts = [
             document["text"]
             for document in combined_documents
@@ -103,177 +104,126 @@ class VectorStore:
 
         embeddings = self.create_embeddings(texts)
 
+        # Create a new FAISS index
         dimension = embeddings.shape[1]
 
         new_index = faiss.IndexFlatIP(dimension)
 
         new_index.add(embeddings)
 
-        # Replace the active index only after successful construction.
+        # Update the vector store only after successful indexing
         self.index = new_index
         self.documents = combined_documents
 
-        unique_sources = {
-            document.get("source")
+        print("FAISS index built successfully!")
+        print("Total chunks:", self.index.ntotal)
+        print("Embedding dimension:", self.index.d)
+
+        if not chunks:
+            raise ValueError("No document chunks provided.")
+
+        for chunk in chunks:
+
+            if not isinstance(chunk, dict):
+                raise ValueError("Invalid document chunk.")
+
+            if not chunk.get("document_id"):
+                raise ValueError(
+                    "Every chunk must have a document_id."
+                )
+
+            if not isinstance(chunk.get("text"), str):
+                raise ValueError(
+                    "Document chunk must contain text."
+                )
+
+            if not chunk["text"].strip():
+                raise ValueError(
+                    "Document chunk cannot be empty."
+                )
+
+    #Delete
+   
+    def remove_document(self, document_id):
+        document_id = str(document_id)
+
+        remaining_documents = [
+            document
             for document in self.documents
-            if document.get("source")
-        }
+            if str(document.get("document_id")) != document_id
+        ]
 
-        print("FAISS index rebuilt successfully!")
-        print("Total document chunks:", self.index.ntotal)
-        print("Unique source files:", len(unique_sources))
-        print("Embedding dimension:", dimension)
+        removed_count = len(self.documents) - len(remaining_documents)
+
+        if removed_count == 0:
+            return 0
+
+        if remaining_documents:
+            texts = [
+                document["text"]
+                for document in remaining_documents
+            ]
+
+            embeddings = self.create_embeddings(texts)
+
+            new_index = faiss.IndexFlatIP(embeddings.shape[1])
+            new_index.add(embeddings)
+
+            self.index = new_index
+
+        else:
+            self.index = None
+
+        self.documents = remaining_documents
+
+        print(f"Removed {removed_count} chunks for document {document_id}")
+
+        return removed_count
 
     # --------------------------------------------------
-    # SEARCH
+    # SAVE FAISS INDEX
     # --------------------------------------------------
 
-    def search(self, query, top_k=3):
+    def save(self, folder_path):
 
         if self.index is None:
-            raise ValueError(
-                "Vector index is not initialized."
-            )
+            raise ValueError("Cannot save an empty FAISS index.")
 
-        if not isinstance(query, str) or not query.strip():
-            raise ValueError(
-                "Search query cannot be empty."
-            )
+        os.makedirs(folder_path, exist_ok=True)
 
-        if top_k < 1:
-            raise ValueError(
-                "top_k must be at least 1."
-            )
+        index_path = os.path.join(folder_path, "index.faiss")
+        documents_path = os.path.join(folder_path, "documents.json")
 
-        query_embedding = self.create_embeddings(
-            [query]
-        )
+        faiss.write_index(self.index, index_path)
 
-        if query_embedding.shape[1] != self.index.d:
-            raise ValueError(
-                "Query embedding dimension does not match FAISS index."
-            )
+        with open(documents_path, "w", encoding="utf-8") as file:
+            json.dump(self.documents, file, ensure_ascii=False, indent=2)
 
-        k = min(top_k, self.index.ntotal)
-
-        if k == 0:
-            return []
-
-        scores, indices = self.index.search(
-            query_embedding,
-            k
-        )
-
-        results = []
-
-        for score, index in zip(
-            scores[0],
-            indices[0]
-        ):
-
-            if index == -1:
-                continue
-
-            result = self.documents[index].copy()
-
-            result["similarity"] = float(score)
-
-            results.append(result)
-
-        return results
+        print("FAISS index and documents saved successfully.")
 
     # --------------------------------------------------
-    # SAVE INDEX
+    # LOAD FAISS INDEX
     # --------------------------------------------------
 
-    def save(self, folder="vector_data"):
+    def load(self, folder_path):
 
-        if self.index is None:
-            raise ValueError(
-                "No index to save."
-            )
-
-        os.makedirs(
-            folder,
-            exist_ok=True
-        )
-
-        index_path = os.path.join(
-            folder,
-            "index.faiss"
-        )
-
-        documents_path = os.path.join(
-            folder,
-            "documents.json"
-        )
-
-        faiss.write_index(
-            self.index,
-            index_path
-        )
-
-        with open(
-            documents_path,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                self.documents,
-                file,
-                ensure_ascii=False,
-                indent=2
-            )
-
-        print("FAISS index and metadata saved.")
-
-    # --------------------------------------------------
-    # LOAD INDEX
-    # --------------------------------------------------
-
-    def load(self, folder="vector_data"):
-
-        index_path = os.path.join(
-            folder,
-            "index.faiss"
-        )
-
-        documents_path = os.path.join(
-            folder,
-            "documents.json"
-        )
+        index_path = os.path.join(folder_path, "index.faiss")
+        documents_path = os.path.join(folder_path, "documents.json")
 
         if not os.path.exists(index_path):
-            raise FileNotFoundError(
-                "FAISS index file not found."
-            )
+            raise FileNotFoundError("FAISS index file not found.")
 
         if not os.path.exists(documents_path):
-            raise FileNotFoundError(
-                "Document metadata file not found."
-            )
+            raise FileNotFoundError("Documents metadata file not found.")
 
-        loaded_index = faiss.read_index(
-            index_path
-        )
+        loaded_index = faiss.read_index(index_path)
 
-        with open(
-            documents_path,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
+        with open(documents_path, "r", encoding="utf-8") as file:
             loaded_documents = json.load(file)
 
         if loaded_index.ntotal != len(loaded_documents):
             raise ValueError(
                 "FAISS index and document metadata are inconsistent."
-            )
-
-        if not isinstance(loaded_documents, list):
-            raise ValueError(
-                "Invalid document metadata."
             )
 
         self.index = loaded_index
@@ -282,3 +232,40 @@ class VectorStore:
         print("FAISS index loaded successfully!")
         print("Total document chunks:", self.index.ntotal)
         print("Embedding dimension:", self.index.d)
+
+    def search(self, query, top_k=3):
+
+        if not isinstance(query, str) or not query.strip():
+            return []
+
+        if self.index is None or not self.documents:
+            return []
+
+        if not isinstance(top_k, int) or top_k <= 0:
+            return []
+
+        # Generate embedding for the user's question
+        query_embedding = self.create_embeddings([query])
+
+        # Search FAISS index
+        results_count = min(top_k, self.index.ntotal)
+
+        scores, indices = self.index.search(
+            query_embedding,
+            results_count
+        )
+
+        results = []
+
+        for score, index_position in zip(scores[0], indices[0]):
+
+            if index_position < 0:
+                continue
+
+            document = self.documents[index_position].copy()
+
+            document["similarity"] = float(score)
+
+            results.append(document)
+
+        return results

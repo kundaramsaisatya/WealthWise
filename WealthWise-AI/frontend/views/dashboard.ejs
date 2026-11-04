@@ -1,13 +1,7 @@
-
 <%
-    const safeAnalytics =
-        typeof analytics !== "undefined" ? analytics : null;
-
-    const safeRisk =
-        typeof risk !== "undefined" ? risk : null;
-
-    const safeError =
-        typeof error !== "undefined" ? error : null;
+    const safeAnalytics = typeof analytics !== "undefined" ? analytics : null;
+    const safeRisk = typeof risk !== "undefined" ? risk : null;
+    const safeError = typeof error !== "undefined" ? error : null;
 
     const safePortfolio =
         typeof portfolio !== "undefined" && portfolio
@@ -15,22 +9,13 @@
             : { holdings: [], totalValue: 0, currency: "INR" };
 
     const safeAllDocumentHoldings =
-        typeof allDocumentHoldings !== "undefined" &&
-        Array.isArray(allDocumentHoldings)
-            ? allDocumentHoldings
-            : [];
+        Array.isArray(allDocumentHoldings) ? allDocumentHoldings : [];
 
     const safeDuplicateRecords =
-        typeof duplicateRecords !== "undefined" &&
-        Array.isArray(duplicateRecords)
-            ? duplicateRecords
-            : [];
+        Array.isArray(duplicateRecords) ? duplicateRecords : [];
 
     const safeConflicts =
-        typeof conflicts !== "undefined" &&
-        Array.isArray(conflicts)
-            ? conflicts
-            : [];
+        Array.isArray(conflicts) ? conflicts : [];
 
     const portfolioHoldings = Array.isArray(safePortfolio.holdings)
         ? safePortfolio.holdings
@@ -47,9 +32,7 @@
             value === undefined ||
             value === "" ||
             !Number.isFinite(Number(value))
-        ) {
-            return "N/A";
-        }
+        ) return "N/A";
 
         return "₹" + Number(value).toLocaleString("en-IN", {
             maximumFractionDigits: 2
@@ -57,30 +40,31 @@
     };
 
     const totalValue = Number(
-        safeAnalytics?.total_value ??
-        safePortfolio.totalValue ??
-        0
+        safeAnalytics?.total_value ?? safePortfolio.totalValue ?? 0
     );
 
-    const allInvestedValuesAvailable =
-        portfolioHoldings.length > 0 &&
-        portfolioHoldings.every(item =>
-            item.investedValue !== null &&
-            item.investedValue !== undefined &&
-            Number.isFinite(Number(item.investedValue))
-        );
-
-    const totalInvested = allInvestedValuesAvailable
-        ? portfolioHoldings.reduce(
-            (sum, item) => sum + Number(item.investedValue),
-            0
-        )
-        : null;
+    const totalInvested =
+        safeAnalytics?.total_invested !== undefined
+            ? safeAnalytics.total_invested
+            : null;
 
     const totalProfitLoss =
-        totalInvested !== null
-            ? totalValue - totalInvested
+        safeAnalytics?.profit_loss !== undefined
+            ? safeAnalytics.profit_loss
             : null;
+
+    const profitLossPercentage =
+        safeAnalytics?.profit_loss_percentage ?? null;
+
+    const portfolioMode = safePortfolio.isDemo
+        ? "Demo data"
+        : "Actual data";
+
+    const sourceDocumentCount = new Set(
+        safeAllDocumentHoldings
+            .map(item => item.documentName)
+            .filter(Boolean)
+    ).size;
 
     const hasExtraDetails = portfolioHoldings.some(item =>
         item.subCategory ||
@@ -91,18 +75,17 @@
         item.currentNav != null
     );
 
-    const sourceDocumentCount = new Set(
-        safeAllDocumentHoldings
-            .map(item => item.documentName)
-            .filter(Boolean)
-    ).size;
+    const riskFlags = Array.isArray(safeRisk?.risk_flags)
+        ? safeRisk.risk_flags
+        : [];
 
-    const portfolioMode = safePortfolio.isDemo
-        ? "Demo Data"
-        : "Actual Data";
+    const analyticsRiskFlags = Array.isArray(safeAnalytics?.risk_flags)
+        ? safeAnalytics.risk_flags
+        : [];
 
-    const safeJson = value =>
-        JSON.stringify(value ?? []).replace(/</g, "\\u003c");
+    const allocationData = Array.isArray(safeAnalytics?.asset_allocation)
+        ? safeAnalytics.asset_allocation
+        : [];
 
     const getConflictName = item =>
         item?.name ||
@@ -117,15 +100,11 @@
         "Different values were found across uploaded documents.";
 
     const getConflictValues = item => {
-        if (Array.isArray(item?.values)) {
-            return item.values;
-        }
+        if (Array.isArray(item?.values)) return item.values;
 
         if (Array.isArray(item?.conflictingValues)) {
             return item.conflictingValues.map(value =>
-                typeof value === "object"
-                    ? value.currentValue
-                    : value
+                typeof value === "object" ? value.currentValue : value
             );
         }
 
@@ -137,195 +116,420 @@
         item?.selectedSource ||
         item?.documentName ||
         "Not specified";
+
+    const safeJson = value =>
+        JSON.stringify(value ?? []).replace(/</g, "\\u003c");
 %>
 
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>WealthWise AI</title>
+    <title>WealthWise AI | Wealth Dashboard</title>
 
     <link rel="stylesheet" href="/style.css">
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
 
-    <!-- Sidebar -->
+<div class="app-layout">
 
-    <aside class="sidebar">
+    <!-- SIDEBAR -->
 
-        <h2>WealthWise<span>AI</span></h2>
+    <aside class="sidebar" id="sidebar">
 
-        <p>WEALTH MANAGEMENT</p>
-        <div>
-            <%= user.name %>
+        <div class="brand">
+            <div class="brand-icon">W</div>
+            <div>
+                <h2>WealthWise <span>AI</span></h2>
+                <p>WEALTH INTELLIGENCE</p>
+            </div>
         </div>
-    
-        <nav>
-            <a href="/">Dashboard</a>
-            <a href="#portfolio">Portfolio</a>
-            <a href="#documents">Documents</a>
-            <a href="#document-library">My Documents</a>
-            <a href="#all-investments">All Investment Records</a>
-            <a href="#reconciliation">Reconciliation</a>
-            <a href="#risk-analysis">Risk Analysis</a>
-            <a href="#assistant">AI Assistant</a>
 
-            
-            
-            <form action="/logout" method="POST">
-                
-                <button type="submit" class="logout-btn">
-                    Logout
-                </button>
-            </form>
+        <div class="sidebar-user">
+            <div class="user-avatar">
+                <%= (user?.name || "U").charAt(0).toUpperCase() %>
+            </div>
+            <div class="user-details">
+                <strong><%= user?.name || "User" %></strong>
+                <small>Personal account</small>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+
+            <span class="nav-heading">WORKSPACE</span>
+
+            <a href="#overview" class="nav-link active">
+                <span class="nav-icon">▦</span>
+                Overview
+            </a>
+
+            <a href="#portfolio" class="nav-link">
+                <span class="nav-icon">◫</span>
+                Portfolio
+            </a>
+
+            <a href="#risk-analysis" class="nav-link">
+                <span class="nav-icon">⌁</span>
+                Analytics & Risk
+            </a>
+
+            <span class="nav-heading">MANAGEMENT</span>
+
+            <a href="#documents" class="nav-link">
+                <span class="nav-icon">▤</span>
+                Documents
+            </a>
+
+            <a href="#reconciliation" class="nav-link">
+                <span class="nav-icon">⇄</span>
+                Reconciliation
+            </a>
+
+            <span class="nav-heading">INTELLIGENCE</span>
+
+            <a href="#assistant" class="nav-link">
+                <span class="nav-icon">✧</span>
+                AI Assistant
+            </a>
+
         </nav>
 
-        
+        <div class="sidebar-bottom">
+
+            <div class="sidebar-status">
+                <span class="status-dot"></span>
+                WealthWise AI
+                <small>Financial intelligence platform</small>
+            </div>
+
+            <form action="/logout" method="POST">
+                <button type="submit" class="logout-btn">
+                    <span>↪</span> Sign out
+                </button>
+            </form>
+
+        </div>
 
     </aside>
 
-    <!-- Main Content -->
 
-    <main class="main">
+    <!-- MAIN WORKSPACE -->
 
-        <header>
+    <main class="main-content">
 
-            <div>
-                <h1>Portfolio Overview</h1>
-                <p>Your intelligent wealth management workspace</p>
+        <!-- TOPBAR -->
+
+        <div class="topbar">
+            <div class="topbar-left">
+                <button class="mobile-menu-btn" id="mobile-menu-btn"
+                    type="button" aria-label="Toggle navigation">
+                    ☰
+                </button>
+
+                <div>
+                    <span class="breadcrumb">Workspace / Overview</span>
+                </div>
             </div>
 
-            <span class="status">
-                ● <%= portfolioMode %>
-            </span>
+            <div class="topbar-right">
+                <span class="data-status">
+                    <span class="status-dot"></span>
+                    <%= portfolioMode %>
+                </span>
+            </div>
+        </div>
 
-        </header>
 
-        <!-- Error -->
+        <!-- ERROR MESSAGE -->
 
         <% if (safeError) { %>
-            <p class="error"><%= safeError %></p>
+            <div class="alert alert-error">
+                <strong>Dashboard notice</strong>
+                <p><%= safeError %></p>
+            </div>
         <% } %>
 
-        <!-- Dashboard Analytics -->
 
-        <% if (safeAnalytics) { %>
+        <!-- OVERVIEW -->
 
-            <!-- Summary Cards -->
+        <section id="overview" class="page-section">
 
-            <section class="stats">
-
-                <div class="card">
-                    <p>Total Portfolio Value</p>
-
-                    <h2>
-                        <%= formatCurrency(safeAnalytics.total_value ?? totalValue) %>
-                    </h2>
+            <div class="page-heading">
+                <div>
+                    <span class="eyebrow">YOUR FINANCIAL OVERVIEW</span>
+                    <h1>Portfolio Overview</h1>
+                    <p>Monitor your wealth, investments and financial position.</p>
                 </div>
 
-                <div class="card">
-                    <p>Total Invested</p>
+                <a href="#documents" class="primary-btn">
+                    + Add documents
+                </a>
+            </div>
 
-                    <h2>
-                        <%= totalInvested !== null
-                            ? formatCurrency(totalInvested)
-                            : "N/A" %>
-                    </h2>
-                </div>
 
-                <div class="card">
-                    <p>Portfolio Profit / Loss</p>
+            <% if (safeAnalytics) { %>
 
-                    <h2>
-                        <% if (totalProfitLoss !== null) { %>
-                            <span class="<%= totalProfitLoss >= 0 ? 'positive' : 'negative' %>">
-                                <%= formatCurrency(totalProfitLoss) %>
-                            </span>
-                        <% } else { %>
-                            N/A
-                        <% } %>
-                    </h2>
-                </div>
+                <!-- KEY METRICS -->
 
-                <div class="card">
-                    <p>Holdings</p>
-                    <h2><%= analyticsHoldings.length %></h2>
-                    <small>Consolidated holdings</small>
-                </div>
+                <div class="metric-grid">
 
-            </section>
-
-            <!-- Asset Allocation -->
-
-            <section class="panel" id="portfolio">
-
-                <h2>Asset Allocation</h2>
-
-                <% if (
-                    Array.isArray(safeAnalytics.asset_allocation) &&
-                    safeAnalytics.asset_allocation.length > 0
-                ) { %>
-
-                    <% safeAnalytics.asset_allocation.forEach(item => { %>
-
-                        <div class="allocation">
-
-                            <div class="allocation-label">
-                                <span><%= item.asset_class %></span>
-                                <strong><%= item.percentage %>%</strong>
-                            </div>
-
-                            <div class="progress">
-                                <div style="width: <%= Math.min(100, Math.max(0, Number(item.percentage) || 0)) %>%"></div>
-                            </div>
-
+                    <div class="metric-card primary-metric">
+                        <div class="metric-top">
+                            <span>Total Portfolio Value</span>
+                            <span class="metric-icon">₹</span>
                         </div>
 
-                    <% }) %>
+                        <h2>
+                            <%= formatCurrency(safeAnalytics.total_value ?? totalValue) %>
+                        </h2>
 
-                <% } else { %>
+                        <small>Based on consolidated holdings</small>
+                    </div>
 
-                    <p>No asset allocation data available.</p>
 
-                <% } %>
+                    <div class="metric-card">
+                        <div class="metric-top">
+                            <span>Total Invested</span>
+                            <span class="metric-icon">↗</span>
+                        </div>
 
-            </section>
+                        <h2><%= formatCurrency(totalInvested) %></h2>
+                        <small>Available cost-basis information</small>
+                    </div>
 
-            <!-- Charts -->
 
-            <section class="charts-grid">
+                    <div class="metric-card">
+                        <div class="metric-top">
+                            <span>Profit / Loss</span>
+                            <span class="metric-icon">±</span>
+                        </div>
 
-                <div class="panel">
-                    <h2>Asset Distribution</h2>
-                    <canvas id="allocationChart"></canvas>
+                        <h2 class="<%= totalProfitLoss === null ? '' : Number(totalProfitLoss) >= 0 ? 'positive' : 'negative' %>">
+                            <%= formatCurrency(totalProfitLoss) %>
+                        </h2>
+
+                        <small>
+                            <%= profitLossPercentage !== null
+                                ? Number(profitLossPercentage).toFixed(2) + "% simple return"
+                                : "Return unavailable" %>
+                        </small>
+                    </div>
+
+
+                    <div class="metric-card">
+                        <div class="metric-top">
+                            <span>Consolidated Holdings</span>
+                            <span class="metric-icon">▤</span>
+                        </div>
+
+                        <h2><%= analyticsHoldings.length %></h2>
+                        <small>Investment records</small>
+                    </div>
+
                 </div>
 
-                <div class="panel">
-                    <h2>Holding-wise Investment</h2>
-                    <canvas id="holdingsChart"></canvas>
+
+                <!-- CHARTS -->
+
+                <div class="section-heading">
+                    <div>
+                        <h2>Portfolio Composition</h2>
+                        <p>Understand how your investments are distributed.</p>
+                    </div>
                 </div>
 
-            </section>
+                <div class="dashboard-grid charts-grid">
 
-            <!-- Portfolio Holdings -->
+                    <div class="content-card chart-card">
+                        <div class="card-heading">
+                            <div>
+                                <h3>Asset Allocation</h3>
+                                <p>Distribution across asset classes</p>
+                            </div>
+                        </div>
 
-            <section class="panel">
+                        <% if (allocationData.length > 0) { %>
+                            <div class="chart-container doughnut-container">
+                                <canvas id="allocationChart"></canvas>
+                            </div>
+                        <% } else { %>
+                            <div class="empty-state">
+                                <span>◉</span>
+                                <p>No asset allocation data available.</p>
+                            </div>
+                        <% } %>
+                    </div>
 
-                <h2>Portfolio Holdings</h2>
 
-                <div class="table-wrap">
+                    <div class="content-card chart-card">
+                        <div class="card-heading">
+                            <div>
+                                <h3>Largest Holdings</h3>
+                                <p>Current value by investment</p>
+                            </div>
+                        </div>
 
+                        <% if (analyticsHoldings.length > 0) { %>
+                            <div class="chart-container holdings-chart-container">
+                                <canvas id="holdingsChart"></canvas>
+                            </div>
+                        <% } else { %>
+                            <div class="empty-state">
+                                <span>▥</span>
+                                <p>No holding data available.</p>
+                            </div>
+                        <% } %>
+                    </div>
+
+                </div>
+
+
+                <!-- PORTFOLIO HIGHLIGHTS -->
+
+                <div class="section-heading">
+                    <div>
+                        <h2>Portfolio Highlights</h2>
+                        <p>Important observations from your current portfolio.</p>
+                    </div>
+
+                    <a href="#risk-analysis" class="text-link">
+                        View risk analysis →
+                    </a>
+                </div>
+
+                <div class="dashboard-grid highlight-grid">
+
+                    <div class="content-card highlight-card">
+                        <span class="highlight-label">Largest Holding</span>
+
+                        <h3>
+                            <%= safeAnalytics.largest_holding?.name || "N/A" %>
+                        </h3>
+
+                        <div class="highlight-value">
+                            <%= formatCurrency(safeAnalytics.largest_holding?.value) %>
+                        </div>
+
+                        <small>
+                            <%= safeAnalytics.largest_holding?.weight_percentage ?? "N/A" %>%
+                            of portfolio
+                        </small>
+                    </div>
+
+
+                    <div class="content-card highlight-card">
+                        <span class="highlight-label">Top 3 Concentration</span>
+
+                        <h3>
+                            <%= safeAnalytics.concentration?.top_three_concentration ?? "N/A" %>%
+                        </h3>
+
+                        <small>Combined weight of three largest holdings</small>
+                    </div>
+
+
+                    <div class="content-card highlight-card">
+                        <span class="highlight-label">Cash / Liquid Allocation</span>
+
+                        <h3>
+                            <%= safeAnalytics.liquidity?.percentage ?? "N/A" %>%
+                        </h3>
+
+                        <small>Reported Cash / Liquid asset allocation</small>
+                    </div>
+
+                </div>
+
+
+                <!-- RECENT DATA SUMMARY -->
+
+                <div class="content-card summary-card">
+                    <div class="card-heading">
+                        <div>
+                            <h3>Data Summary</h3>
+                            <p>Overview of your uploaded financial information.</p>
+                        </div>
+                    </div>
+
+                    <div class="summary-grid">
+                        <div>
+                            <span>Extracted records</span>
+                            <strong><%= safeAllDocumentHoldings.length %></strong>
+                        </div>
+
+                        <div>
+                            <span>Source documents</span>
+                            <strong><%= sourceDocumentCount %></strong>
+                        </div>
+
+                        <div>
+                            <span>Duplicate groups</span>
+                            <strong><%= safeDuplicateRecords.length %></strong>
+                        </div>
+
+                        <div>
+                            <span>Valuation differences</span>
+                            <strong><%= safeConflicts.length %></strong>
+                        </div>
+                    </div>
+                </div>
+
+            <% } else { %>
+
+                <div class="welcome-card">
+                    <div class="welcome-icon">✧</div>
+                    <span class="eyebrow">GET STARTED</span>
+                    <h2>Welcome to WealthWise AI</h2>
+                    <p>
+                        Bring your financial documents together to build
+                        a consolidated view of your wealth.
+                    </p>
+                    <a href="#documents" class="primary-btn">
+                        Upload your first document
+                    </a>
+                </div>
+
+            <% } %>
+
+        </section>
+
+
+        <!-- PORTFOLIO -->
+
+        <section id="portfolio" class="page-section">
+
+            <div class="page-heading">
+                <div>
+                    <span class="eyebrow">INVESTMENT MANAGEMENT</span>
+                    <h1>Portfolio Holdings</h1>
+                    <p>Review your consolidated investments and their performance.</p>
+                </div>
+            </div>
+
+
+            <div class="content-card">
+
+                <div class="card-heading">
+                    <div>
+                        <h3>Consolidated Investments</h3>
+                        <p>One view of your recognized portfolio holdings.</p>
+                    </div>
+
+                    <span class="count-badge">
+                        <%= analyticsHoldings.length %> holdings
+                    </span>
+                </div>
+
+                <div class="table-container">
                     <table>
-
                         <thead>
                             <tr>
-                                <th>Holding</th>
+                                <th>Investment</th>
                                 <th>Asset Class</th>
                                 <th>Invested Value</th>
                                 <th>Current Value</th>
@@ -335,79 +539,72 @@
                         </thead>
 
                         <tbody>
-
                             <% analyticsHoldings.forEach(item => { %>
-
                                 <tr>
-
-                                    <td><%= item.name || "Unnamed investment" %></td>
-
-                                    <td><%= item.asset_class || "N/A" %></td>
-
-                                    <td>
-                                        <%= formatCurrency(item.invested_value) %>
+                                    <td class="investment-name">
+                                        <strong><%= item.name || "Unnamed investment" %></strong>
                                     </td>
 
                                     <td>
+                                        <span class="category-tag">
+                                            <%= item.asset_class || "N/A" %>
+                                        </span>
+                                    </td>
+
+                                    <td><%= formatCurrency(item.invested_value) %></td>
+
+                                    <td class="value-cell">
                                         <%= formatCurrency(item.current_value) %>
                                     </td>
 
                                     <td>
-
                                         <% if (item.profit_loss != null) { %>
-
                                             <span class="<%= Number(item.profit_loss) >= 0 ? 'positive' : 'negative' %>">
-
                                                 <%= formatCurrency(item.profit_loss) %>
-
-                                                (<%= item.profit_loss_percentage != null
-                                                    ? item.profit_loss_percentage + "%"
-                                                    : "N/A" %>)
-
+                                                <small>
+                                                    (<%= item.profit_loss_percentage != null
+                                                        ? item.profit_loss_percentage + "%"
+                                                        : "N/A" %>)
+                                                </small>
                                             </span>
-
                                         <% } else { %>
-
                                             N/A
-
                                         <% } %>
-
                                     </td>
 
                                     <td>
-                                        <%= item.weight_percentage ?? 0 %>%
+                                        <%= item.weight_percentage ?? "N/A" %>%
                                     </td>
-
                                 </tr>
-
                             <% }) %>
 
                             <% if (analyticsHoldings.length === 0) { %>
                                 <tr>
-                                    <td colspan="6">No consolidated holdings available.</td>
+                                    <td colspan="6" class="empty-table">
+                                        No consolidated holdings available.
+                                    </td>
                                 </tr>
                             <% } %>
-
                         </tbody>
-
                     </table>
-
                 </div>
 
-            </section>
+            </div>
 
-            <!-- Additional Investment Details -->
 
             <% if (hasExtraDetails) { %>
 
-                <section class="panel">
+                <div class="content-card">
 
-                    <h2>Additional Investment Details</h2>
+                    <div class="card-heading">
+                        <div>
+                            <h3>Investment Details</h3>
+                            <p>Additional identifiers and instrument information.</p>
+                        </div>
+                    </div>
 
-                    <div class="table-wrap">
-
+                    <div class="table-container">
                         <table>
-
                             <thead>
                                 <tr>
                                     <th>Investment</th>
@@ -422,9 +619,7 @@
                             </thead>
 
                             <tbody>
-
                                 <% portfolioHoldings.forEach(item => { %>
-
                                     <tr>
                                         <td><%= item.name || "N/A" %></td>
                                         <td><%= item.isin || "N/A" %></td>
@@ -435,65 +630,434 @@
                                         <td><%= item.folioNumber || "N/A" %></td>
                                         <td><%= item.source || "N/A" %></td>
                                     </tr>
-
                                 <% }) %>
-
                             </tbody>
-
                         </table>
-
                     </div>
 
-                </section>
+                </div>
 
             <% } %>
 
-        <% } else { %>
+        </section>
 
-            <section class="panel">
 
-                <h2>Welcome to WealthWise AI</h2>
+        <!-- ANALYTICS AND RISK -->
 
-                <p>
-                    Upload your financial statement to view your portfolio,
-                    asset allocation, investment details and risk analysis.
-                </p>
+        <section id="risk-analysis" class="page-section">
 
-            </section>
+            <div class="page-heading">
+                <div>
+                    <span class="eyebrow">PORTFOLIO INTELLIGENCE</span>
+                    <h1>Analytics & Risk</h1>
+                    <p>Understand concentration, liquidity and configured risk observations.</p>
+                </div>
+            </div>
 
-        <% } %>
 
-        <!-- All Extracted Investment Records -->
+            <% if (safeRisk) { %>
 
-        <section class="panel" id="all-investments">
+                <div class="metric-grid risk-metric-grid">
 
-            <h2>All Extracted Investment Records</h2>
+    <div class="metric-card">
+        <div class="metric-top">
+            <span>HHI Concentration</span>
+            <span class="metric-icon">◉</span>
+        </div>
 
-            <p>
-                Complete investment records extracted from all uploaded
-                documents, including duplicate entries.
-            </p>
+        <h2>
+            <%= safeRisk.concentration?.hhi ?? "N/A" %>
+        </h2>
 
-            <div class="stats">
+        <small>Concentration index, 0–10,000 scale</small>
+    </div>
 
-                <div class="card">
-                    <p>Total Extracted Records</p>
-                    <h2><%= safeAllDocumentHoldings.length %></h2>
+
+    <div class="metric-card">
+        <div class="metric-top">
+            <span>Top 3 Holdings</span>
+            <span class="metric-icon">▥</span>
+        </div>
+
+        <h2>
+            <%= safeRisk.concentration?.top_three_concentration ?? "N/A" %>%
+        </h2>
+
+        <small>Combined portfolio weight</small>
+    </div>
+
+
+    <div class="metric-card">
+        <div class="metric-top">
+            <span>Cash / Liquid</span>
+            <span class="metric-icon">◌</span>
+        </div>
+
+        <h2>
+            <%= safeRisk.liquidity?.percentage ?? "N/A" %>%
+        </h2>
+
+        <small>Reported allocation only</small>
+    </div>
+
+
+    <div class="metric-card">
+        <div class="metric-top">
+            <span>Risk Observations</span>
+            <span class="metric-icon">!</span>
+        </div>
+
+        <h2>
+            <%= safeRisk.risk_flag_count ?? riskFlags.length %>
+        </h2>
+
+        <small>Configured thresholds triggered</small>
+    </div>
+
+</div>
+
+
+                <!-- RISK OBSERVATIONS -->
+
+                <div class="content-card">
+
+                    <div class="card-heading">
+                        <div>
+                            <h3>Risk Observations</h3>
+                            <p>Rules-based observations generated from available portfolio data.</p>
+                        </div>
+                    </div>
+
+                    <% if (riskFlags.length === 0) { %>
+                        <div class="notice notice-info">
+                            No configured risk thresholds were breached.
+                            This does not mean the portfolio is risk-free.
+                        </div>
+                    <% } %>
+
+                    <% riskFlags.forEach(flag => { %>
+                        <div class="risk-item">
+                            <div class="risk-indicator"></div>
+
+                            <div>
+                                <strong>
+                                    <%= flag.severity || "Observation" %>
+                                    ·
+                                    <%= flag.type || "Risk observation" %>
+                                </strong>
+
+                                <p><%= flag.message || "" %></p>
+                            </div>
+                        </div>
+                    <% }) %>
+
+                    <% if (safeRisk.interpretation) { %>
+                        <p class="muted-text"><%= safeRisk.interpretation %></p>
+                    <% } %>
+
                 </div>
 
-                <div class="card">
-                    <p>Source Documents</p>
-                    <h2><%= sourceDocumentCount %></h2>
+
+                <!-- AI RISK EXPLANATION -->
+
+                <div class="content-card ai-card">
+
+                    <div class="ai-card-header">
+                        <div class="ai-icon">✧</div>
+
+                        <div>
+                            <h3>AI Risk Explanation</h3>
+                            <p>Understand what your portfolio metrics indicate.</p>
+                        </div>
+                    </div>
+
+                    <button type="button" id="explain-risk-btn" class="primary-btn">
+                        Generate explanation
+                    </button>
+
+                    <div id="risk-explanation-result" class="ai-result"></div>
+
+                </div>
+
+
+                <div class="disclaimer">
+                    <strong>Important:</strong>
+                    <%= safeRisk.disclaimer ||
+                        "These are illustrative analytics based on available portfolio data. They are not investment advice or a suitability assessment." %>
+                </div>
+
+            <% } else { %>
+
+                <div class="empty-state large-empty-state">
+                    <span>⌁</span>
+                    <h3>Risk analysis unavailable</h3>
+                    <p>Upload and process financial documents to view portfolio risk metrics.</p>
+                </div>
+
+            <% } %>
+
+        </section>
+
+
+        <!-- DOCUMENT MANAGEMENT -->
+
+        <section id="documents" class="page-section">
+
+            <div class="page-heading">
+                <div>
+                    <span class="eyebrow">FINANCIAL DATA HUB</span>
+                    <h1>Documents</h1>
+                    <p>Upload and manage your financial records in one place.</p>
+                </div>
+            </div>
+
+
+            <!-- UPLOAD -->
+
+            <div class="content-card upload-card">
+
+                <div class="upload-icon">↑</div>
+
+                <h3>Upload Financial Documents</h3>
+
+                <p>
+                    Add PDF or Excel statements to extract and organize
+                    your financial information.
+                </p>
+
+                <form
+                    action="/upload"
+                    method="POST"
+                    enctype="multipart/form-data"
+                    id="upload-form"
+                    class="upload-form"
+                >
+
+                    <input
+                        type="file"
+                        name="files"
+                        accept=".pdf,.xlsx"
+                        multiple
+                        required
+                    >
+
+                    <button type="submit" class="primary-btn">
+                        Upload documents
+                    </button>
+
+                </form>
+
+                <small class="upload-help">
+                    Supported formats: PDF and XLSX · Maximum 10 MB per file
+                </small>
+
+            </div>
+
+
+            <!-- DOCUMENT LIBRARY -->
+
+            <div class="content-card">
+
+                <div class="card-heading">
+                    <div>
+                        <h3>My Financial Documents</h3>
+                        <p>View processing status and manage uploaded files.</p>
+                    </div>
+
+                    <span class="count-badge" id="document-count">
+                        Your documents
+                    </span>
+                </div>
+
+                <div id="document-list" class="document-list">
+                    <div class="loading-state">Loading documents...</div>
                 </div>
 
             </div>
 
-            <% if (safeAllDocumentHoldings.length > 0) { %>
+        </section>
 
-                <div class="table-wrap">
+
+        <!-- RECONCILIATION -->
+
+        <section id="reconciliation" class="page-section">
+
+            <div class="page-heading">
+                <div>
+                    <span class="eyebrow">DATA QUALITY & VERIFICATION</span>
+                    <h1>Reconciliation</h1>
+                    <p>Review matched records and differences across uploaded documents.</p>
+                </div>
+            </div>
+
+
+            <div class="metric-grid">
+
+                <div class="metric-card">
+                    <div class="metric-top">
+                        <span>Extracted Records</span>
+                        <span class="metric-icon">▤</span>
+                    </div>
+
+                    <h2><%= safeAllDocumentHoldings.length %></h2>
+                    <small>Across uploaded documents</small>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-top">
+                        <span>Duplicate Groups</span>
+                        <span class="metric-icon">⇄</span>
+                    </div>
+
+                    <h2><%= safeDuplicateRecords.length %></h2>
+                    <small>Matched investment records</small>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-top">
+                        <span>Valuation Differences</span>
+                        <span class="metric-icon">!</span>
+                    </div>
+
+                    <h2><%= safeConflicts.length %></h2>
+                    <small>Records requiring attention</small>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-top">
+                        <span>Source Documents</span>
+                        <span class="metric-icon">▧</span>
+                    </div>
+
+                    <h2><%= sourceDocumentCount %></h2>
+                    <small>Documents containing extracted records</small>
+                </div>
+
+            </div>
+
+
+            <!-- DUPLICATE RECORDS -->
+
+            <div class="content-card">
+
+                <div class="card-heading">
+                    <div>
+                        <h3>Matched Investment Records</h3>
+                        <p>Records identified as belonging to the same investment.</p>
+                    </div>
+                </div>
+
+                <% if (safeDuplicateRecords.length > 0) { %>
+
+                    <% safeDuplicateRecords.forEach(group => { %>
+
+                        <div class="reconciliation-item">
+                            <div>
+                                <strong><%= getConflictName(group) %></strong>
+
+                                <p>
+                                    Matched records:
+                                    <%= group.records?.length ?? group.count ?? "Multiple" %>
+                                </p>
+
+                                <small>
+                                    Selected source: <%= getSelectedDocument(group) %>
+                                </small>
+                            </div>
+
+                            <span class="category-tag">Matched</span>
+                        </div>
+
+                    <% }) %>
+
+                <% } else { %>
+
+                    <div class="empty-state">
+                        <span>⇄</span>
+                        <p>No duplicate groups reported.</p>
+                    </div>
+
+                <% } %>
+
+            </div>
+
+
+            <!-- CONFLICTS -->
+
+            <div class="content-card">
+
+                <div class="card-heading">
+                    <div>
+                        <h3>Valuation Differences</h3>
+                        <p>Review differences reported across your documents.</p>
+                    </div>
+                </div>
+
+                <% if (safeConflicts.length > 0) { %>
+
+                    <% safeConflicts.forEach(conflict => {
+                        const values = getConflictValues(conflict);
+                    %>
+
+                        <div class="conflict-item">
+
+                            <div class="conflict-heading">
+                                <strong><%= getConflictName(conflict) %></strong>
+                                <span class="warning-tag">Review required</span>
+                            </div>
+
+                            <p><%= getConflictMessage(conflict) %></p>
+
+                            <% if (values.length > 0) { %>
+                                <div class="conflict-values">
+                                    <span>Reported values</span>
+
+                                    <strong>
+                                        <%= values.map(value =>
+                                            formatCurrency(
+                                                typeof value === "object"
+                                                    ? value?.currentValue
+                                                    : value
+                                            )
+                                        ).join(" / ") %>
+                                    </strong>
+                                </div>
+                            <% } %>
+
+                            <small>
+                                Selected source: <%= getSelectedDocument(conflict) %>
+                            </small>
+
+                        </div>
+
+                    <% }) %>
+
+                <% } else { %>
+
+                    <div class="empty-state">
+                        <span>✓</span>
+                        <p>No valuation differences were reported by reconciliation.</p>
+                    </div>
+
+                <% } %>
+
+            </div>
+
+
+            <!-- ALL EXTRACTED RECORDS -->
+
+            <div class="content-card">
+
+                <div class="card-heading">
+                    <div>
+                        <h3>All Extracted Investment Records</h3>
+                        <p>Original records from uploaded documents, including duplicates.</p>
+                    </div>
+                </div>
+
+                <div class="table-container">
 
                     <table>
-
                         <thead>
                             <tr>
                                 <th>Investment</th>
@@ -514,541 +1078,161 @@
                             <% safeAllDocumentHoldings.forEach(item => { %>
 
                                 <tr>
-
                                     <td><%= item.name || "Unnamed investment" %></td>
-
                                     <td><%= item.assetClass || "N/A" %></td>
-
                                     <td><%= item.isin || "N/A" %></td>
-
                                     <td><%= item.quantity ?? "N/A" %></td>
-
-                                    <td>
-                                        <%= formatCurrency(item.investedValue) %>
-                                    </td>
-
-                                    <td>
-                                        <%= formatCurrency(item.currentValue) %>
-                                    </td>
-
-                                    <td>
-                                        <%= formatCurrency(item.profitLoss) %>
-                                    </td>
-
-                                    <td>
-                                        <%= item.folioNumber || "N/A" %>
-                                    </td>
+                                    <td><%= formatCurrency(item.investedValue) %></td>
+                                    <td><%= formatCurrency(item.currentValue) %></td>
+                                    <td><%= formatCurrency(item.profitLoss) %></td>
+                                    <td><%= item.folioNumber || "N/A" %></td>
 
                                     <td>
                                         <%= item.documentName || "N/A" %>
+
                                         <% if (item.rowNumber != null) { %>
-                                            <small> (Row <%= item.rowNumber %>)</small>
+                                            <small>(Row <%= item.rowNumber %>)</small>
                                         <% } %>
                                     </td>
 
                                     <td>
-                                        <%= item.isDemo ? "Demo" : "Actual" %>
+                                        <span class="category-tag">
+                                            <%= item.isDemo ? "Demo" : "Actual" %>
+                                        </span>
                                     </td>
-
                                 </tr>
 
                             <% }) %>
 
-                        </tbody>
+                            <% if (safeAllDocumentHoldings.length === 0) { %>
+                                <tr>
+                                    <td colspan="10" class="empty-table">
+                                        No extracted investment records available.
+                                    </td>
+                                </tr>
+                            <% } %>
 
+                        </tbody>
                     </table>
 
                 </div>
 
-            <% } else { %>
-
-                <p>No investment records extracted yet.</p>
-
-            <% } %>
+            </div>
 
         </section>
 
-        <!-- Portfolio Reconciliation -->
 
-        <section class="panel" id="reconciliation">
+        <!-- AI ASSISTANT -->
 
-            <h2>Portfolio Reconciliation</h2>
+        <section id="assistant" class="page-section">
 
-            <p>
-                Review matched investment records and differences in
-                reported valuations across uploaded documents.
-            </p>
-
-            <div class="stats">
-
-                <div class="card">
-                    <p>Duplicate Groups</p>
-                    <h2><%= safeDuplicateRecords.length %></h2>
+            <div class="page-heading">
+                <div>
+                    <span class="eyebrow">WEALTHWISE INTELLIGENCE</span>
+                    <h1>AI Assistant</h1>
+                    <p>Ask questions about your uploaded financial documents.</p>
                 </div>
-
-                <div class="card">
-                    <p>Valuation Differences</p>
-                    <h2><%= safeConflicts.length %></h2>
-                </div>
-
             </div>
 
-            <% if (safeDuplicateRecords.length > 0) { %>
 
-                <h3>Matched Investment Records</h3>
+            <div class="assistant-layout">
 
-                <% safeDuplicateRecords.forEach(group => { %>
+                <div class="content-card assistant-card">
 
-                    <div class="risk">
+                    <div class="assistant-header">
+                        <div class="ai-icon">✧</div>
 
-                        <strong>
-                            <%= getConflictName(group) %>
-                        </strong>
+                        <div>
+                            <h3>WealthWise AI</h3>
+                            <span class="assistant-status">
+                                <span class="status-dot"></span>
+                                Document intelligence
+                            </span>
+                        </div>
 
-                        <p>
-                            Matched records:
-                            <%= group.records?.length ?? group.count ?? "Multiple" %>
-                        </p>
-
-                        <small>
-                            Selected source:
-                            <%= getSelectedDocument(group) %>
-                        </small>
-
+                        <button
+                            type="button"
+                            id="load-history-btn"
+                            class="secondary-btn history-btn"
+                        >
+                            View history
+                        </button>
                     </div>
 
-                <% }) %>
 
-            <% } %>
+                    <div id="chat-history" class="chat-history"></div>
 
-            <% if (safeConflicts.length > 0) { %>
 
-                <h3>Valuation Differences</h3>
+                    <div id="chat-box" class="chat-box">
 
-                <% safeConflicts.forEach(conflict => { %>
-
-                    <div class="risk">
-
-                        <strong>
-                            <%= getConflictName(conflict) %>
-                        </strong>
-
-                        <p>
-                            <%= getConflictMessage(conflict) %>
-                        </p>
-
-                        <% const values = getConflictValues(conflict); %>
-
-                        <% if (values.length > 0) { %>
-
+                        <div class="assistant-welcome">
+                            <div class="ai-icon">✧</div>
+                            <h3>How can I help you?</h3>
                             <p>
-                                Reported values:
-
-                                <%= values.map(value =>
-                                    formatCurrency(
-                                        typeof value === "object"
-                                            ? value?.currentValue
-                                            : value
-                                    )
-                                ).join(" / ") %>
+                                Ask about your uploaded statements,
+                                investment holdings or financial records.
                             </p>
-
-                        <% } %>
-
-                        <small>
-                            Selected source:
-                            <%= getSelectedDocument(conflict) %>
-                        </small>
+                        </div>
 
                     </div>
 
-                <% }) %>
 
-            <% } %>
+                    <form id="chat-form" class="chat-form">
 
-            <% if (
-                safeDuplicateRecords.length === 0 &&
-                safeConflicts.length === 0
-            ) { %>
+                        <input
+                            type="text"
+                            id="question"
+                            name="question"
+                            placeholder="Ask about your financial documents..."
+                            required
+                            autocomplete="off"
+                        >
 
-                <p>
-                    No duplicate groups or valuation differences were
-                    reported by the reconciliation process.
-                </p>
+                        <button type="submit" class="primary-btn">
+                            Ask AI →
+                        </button>
 
-            <% } %>
+                    </form>
 
-        </section>
-
-        <!-- Risk Analysis -->
-
-        <% if (safeRisk) { %>
-
-            <section class="panel" id="risk-analysis">
-
-                <h2>Portfolio Risk Intelligence</h2>
-
-                <div class="stats">
-
-                    <div class="card">
-                        <p>HHI Concentration</p>
-
-                        <h2><%= safeRisk.hhi ?? "N/A" %></h2>
-
-                        <small>
-                            Normalized: <%= safeRisk.normalized_hhi ?? "N/A" %>
-                        </small>
-                    </div>
-
-                    <div class="card">
-                        <p>Top 3 Holdings</p>
-
-                        <h2>
-                            <%= safeRisk.top_three_concentration ?? 0 %>%
-                        </h2>
-                    </div>
-
-                    <div class="card">
-                        <p>Liquidity</p>
-
-                        <h2>
-                            <%= safeRisk.liquidity_percentage ?? 0 %>%
-                        </h2>
-                    </div>
-
-                    <div class="card">
-                        <p>Risk Flags</p>
-
-                        <h2>
-                            <%= Array.isArray(safeRisk.risk_flags)
-                                ? safeRisk.risk_flags.length
-                                : 0 %>
-                        </h2>
-                    </div>
-
-                </div>
-
-                <!-- AI Risk Explanation -->
-
-                <div class="ai-explanation">
-
-                    <h3>AI Risk Explanation</h3>
-
-                    <p>
-                        Understand your portfolio metrics using AI.
-                    </p>
-
-                    <button type="button" id="explain-risk-btn">
-                        Explain Portfolio Risk
-                    </button>
-
-                    <div id="risk-explanation-result"></div>
-
-                </div>
-
-                <% if (
-                    !safeRisk.risk_flags ||
-                    safeRisk.risk_flags.length === 0
-                ) { %>
-
-                    <div class="risk">
-                        No configured risk thresholds were breached.
-                    </div>
-
-                <% } %>
-
-                <% (safeRisk.risk_flags || []).forEach(flag => { %>
-
-                    <div class="risk">
-
-                        <strong>
-                            <%= flag.severity || "INFO" %>:
-                            <%= flag.type || "Risk observation" %>
-                        </strong>
-
-                        <p><%= flag.message || "" %></p>
-
-                    </div>
-
-                <% }) %>
-
-                <p>
-                    <small>
-                        <%= safeRisk.interpretation || "" %>
+                    <small class="assistant-disclaimer">
+                        Responses are based on retrieved document information.
+                        Always verify important financial figures against original records.
                     </small>
-                </p>
 
-            </section>
+                </div>
 
-        <% } %>
-
-        <!-- Analytics Risk Flags -->
-
-        <% if (safeAnalytics) { %>
-
-            <section class="panel">
-
-                <h2>Portfolio Insights</h2>
-
-                <% if (
-                    !safeAnalytics.risk_flags ||
-                    safeAnalytics.risk_flags.length === 0
-                ) { %>
-
-                    <p>
-                        No threshold-based risk flags triggered by
-                        the current rules.
-                    </p>
-
-                <% } %>
-
-                <% (safeAnalytics.risk_flags || []).forEach(flag => { %>
-
-                    <div class="risk">
-                        <strong><%= flag.type || "Risk observation" %></strong>
-                        <p><%= flag.message || "" %></p>
-                    </div>
-
-                <% }) %>
-
-                <small>
-                    <%= safeAnalytics.disclaimer || "" %>
-                </small>
-
-            </section>
-
-        <% } %>
-
-        <!-- Document Upload -->
-
-        <section class="panel" id="documents">
-
-            <h2>Upload Financial Documents</h2>
-
-            <p>
-                Upload multiple PDF or Excel financial statements together.
-            </p>
-
-            <form
-                action="/upload"
-                method="POST"
-                enctype="multipart/form-data"
-                id="upload-form"
-            >
-
-                <input
-                    type="file"
-                    name="files"
-                    accept=".pdf,.xlsx"
-                    multiple
-                    required
-                >
-
-                <button type="submit">
-                    Upload Documents
-                </button>
-
-            </form>
-
-            <small>
-                Supported formats: PDF and XLSX.
-                Maximum size: 10 MB per file.
-            </small>
-
-        </section>
-
-        <!-- Document Manager -->
-
-        <section class="panel" id="document-library">
-
-            <h2>My Financial Documents</h2>
-
-            <p>
-                View all your uploaded financial statements and their
-                processing status.
-            </p>
-
-            <div id="document-list">
-                Loading documents...
             </div>
 
         </section>
 
-        <!-- AI Assistant -->
 
-        <section class="panel" id="assistant">
+        <!-- FOOTER -->
 
-            <h2>WealthWise AI Assistant</h2>
-
-            <p>
-                Ask questions about your uploaded financial documents.
-            </p>
-
-            <button id="load-history-btn" type="button">
-                View Previous Conversations
-            </button>
-
-            <div id="chat-history"></div>
-
-            <div id="chat-box"></div>
-
-            <form id="chat-form">
-
-                <input
-                    type="text"
-                    id="question"
-                    name="question"
-                    placeholder="Ask about your portfolio..."
-                    required
-                >
-
-                <button type="submit">
-                    Ask AI
-                </button>
-
-            </form>
-
-        </section>
-
-        <!-- Footer -->
-
-        <footer>
-            WealthWise AI · Financial Intelligence Platform · Not investment advice
+        <footer class="app-footer">
+            <span>WealthWise AI</span>
+            <span>Financial Intelligence Platform</span>
+            <span>Not investment advice</span>
         </footer>
 
     </main>
 
-    <!-- Chart.js -->
+</div>
 
-    <% if (safeAnalytics) { %>
 
-        <script>
+<!-- DATA FOR CHARTS -->
 
-            const allocationData =
-                <%- safeJson(safeAnalytics.asset_allocation) %>;
+<% if (safeAnalytics) { %>
 
-            const holdingsData =
-                <%- safeJson(analyticsHoldings) %>;
+    <script>
+        window.wealthWiseData = {
+            allocation: <%- safeJson(allocationData) %>,
+            holdings: <%- safeJson(analyticsHoldings) %>
+        };
+    </script>
 
-            // Asset Distribution
+<% } %>
 
-            const allocationCanvas =
-                document.getElementById("allocationChart");
-
-            if (allocationCanvas && allocationData.length > 0) {
-
-                new Chart(allocationCanvas, {
-
-                    type: "doughnut",
-
-                    data: {
-
-                        labels: allocationData.map(item =>
-                            item.asset_class || "Other"
-                        ),
-
-                        datasets: [{
-
-                            data: allocationData.map(item =>
-                                Number(item.value ?? item.percentage ?? 0)
-                            )
-
-                        }]
-
-                    },
-
-                    options: {
-
-                        responsive: true,
-
-                        maintainAspectRatio: true,
-
-                        cutout: "65%",
-
-                        plugins: {
-
-                            legend: {
-                                position: "bottom"
-                            }
-
-                        }
-
-                    }
-
-                });
-
-            }
-
-            // Holding-wise Investment
-
-            const holdingsCanvas =
-                document.getElementById("holdingsChart");
-
-            if (holdingsCanvas && holdingsData.length > 0) {
-
-                new Chart(holdingsCanvas, {
-
-                    type: "bar",
-
-                    data: {
-
-                        labels: holdingsData.map(item =>
-                            item.name || "Unnamed investment"
-                        ),
-
-                        datasets: [{
-
-                            label: "Current Market Value (₹)",
-
-                            data: holdingsData.map(item =>
-                                Number(item.current_value ?? 0)
-                            )
-
-                        }]
-
-                    },
-
-                    options: {
-
-                        responsive: true,
-
-                        indexAxis: "y",
-
-                        plugins: {
-
-                            legend: {
-                                display: false
-                            },
-
-                            tooltip: {
-
-                                callbacks: {
-
-                                    label: function(context) {
-
-                                        return "₹" +
-                                            Number(context.raw).toLocaleString("en-IN");
-
-                                    }
-
-                                }
-
-                            }
-
-                        }
-
-                    }
-
-                });
-
-            }
-
-        </script>
-
-    <% } %>
-
-    <script src="/app.js"></script>
+<script src="/app.js"></script>
 
 </body>
-
 </html>

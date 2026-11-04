@@ -53,7 +53,7 @@ def create_chunks(text, chunk_size=500, overlap=100):
     return chunks
 
 
-def process_pdf(file_path):
+def process_pdf(file_path, document_id, original_filename):
 
     pages = extract_text_from_pdf(file_path)
 
@@ -68,10 +68,12 @@ def process_pdf(file_path):
         for chunk_number, chunk in enumerate(chunks, start=1):
 
             all_chunks.append({
+                "document_id": str(document_id),
                 "text": chunk,
                 "page": page_data["page"],
                 "chunk": chunk_number,
-                "source": file_path
+                "source": original_filename,
+                "document_type": "pdf"
             })
 
     return all_chunks

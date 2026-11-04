@@ -1,4 +1,3 @@
-
 import os
 import json
 import time
@@ -7,15 +6,21 @@ import re
 from datetime import date
 from pathlib import Path
 
+from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
-from groq import Groq
+from groq import (
+    Groq,
+    RateLimitError,
+    APIStatusError,
+    BadRequestError,
+)
 
 from document_processor import extract_text_from_pdf
 
 
-# --------------------------------------------------
+# ==================================================
 # CONFIGURATION
-# --------------------------------------------------
+# ==================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -26,56 +31,96 @@ if not api_key:
     raise ValueError("GROQ_API_KEY is missing from the .env file.")
 
 client = Groq(api_key=api_key)
+app = FastAPI()
 
 MODEL_NAME = "openai/gpt-oss-120b"
 
 BATCH_SIZE = 1
-BATCH_DELAY = 20
+BATCH_DELAY = 10
+MAX_COMPLETION_TOKENS = 1500
+MAX_RETRIES = 4
+MAX_SPLIT_DEPTH = 5
+
+# Page splitting configuration
+LINE_OVERLAP = 2
+CHAR_OVERLAP = 500
+MIN_LINES_TO_SPLIT = 4
+MIN_CHARS_TO_SPLIT = 1000
+
+ALLOWED_ASSET_CLASSES = {
+    "Equity",
+    "Debt",
+    "Hybrid",
+    "Liquid",
+    "Gold",
+    "Real Estate",
+    "Cash",
+    "Unclassified",
+}
+
+ALLOWED_CURRENCIES = {
+    "INR", "USD", "EUR", "GBP", "JPY",
+    "CAD", "AUD", "SGD", "CHF", "AED",
+}
 
 
-# --------------------------------------------------
+# ==================================================
+# CUSTOM EXCEPTIONS
+# ==================================================
+
+class TruncatedResponseError(Exception):
+    pass
+
+
+class RequestTooLargeError(Exception):
+    pass
+
+
+# ==================================================
+# ERROR DETECTION
+# ==================================================
+
+def is_truncation_error(error):
+    message = str(error).lower()
+
+    return (
+        "json_validate_failed" in message
+        or "max completion tokens reached" in message
+        or "maximum completion tokens" in message
+    )
+
+
+# ==================================================
 # PAGE BATCHING
-# --------------------------------------------------
+# ==================================================
 
 def create_page_batches(pages, batch_size=BATCH_SIZE):
+
     return [
         pages[i:i + batch_size]
         for i in range(0, len(pages), batch_size)
     ]
 
 
-# --------------------------------------------------
-# DATE VALIDATION
-# --------------------------------------------------
+# ==================================================
+# VALIDATION
+# ==================================================
 
 def normalize_report_date(value):
-
-    if value is None:
-        return None
 
     if not isinstance(value, str):
         return None
 
     value = value.strip()
 
-    if not value:
-        return None
-
-    # Accept only unambiguous ISO date format.
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
         return None
 
     try:
-        parsed = date.fromisoformat(value)
-        return parsed.isoformat()
-
+        return date.fromisoformat(value).isoformat()
     except ValueError:
         return None
 
-
-# --------------------------------------------------
-# VALIDATION HELPERS
-# --------------------------------------------------
 
 def validate_number(value, field_name, holding_name):
 
@@ -84,12 +129,12 @@ def validate_number(value, field_name, holding_name):
 
     if isinstance(value, bool):
         raise ValueError(
-            f"Invalid {field_name} for {holding_name}."
+            f"Invalid {field_name} for {holding_name}: {value}"
         )
 
     if not isinstance(value, (int, float)):
         raise ValueError(
-            f"Non-numeric {field_name} for {holding_name}: {value}"
+            f"Invalid {field_name} for {holding_name}: {value}"
         )
 
     if not math.isfinite(value):
@@ -105,9 +150,192 @@ def validate_number(value, field_name, holding_name):
     return round(float(value), 2)
 
 
-# --------------------------------------------------
-# EXTRACT HOLDINGS FROM ONE BATCH
-# --------------------------------------------------
+def normalize_currency(value):
+
+    if not isinstance(value, str):
+        return None
+
+    currency = value.strip().upper()
+
+    if currency in ALLOWED_CURRENCIES:
+        return currency
+
+    return None
+
+
+# ==================================================
+# NORMALIZE HOLDING
+# ==================================================
+
+def normalize_holding(holding):
+
+    name = holding.get("name")
+
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Invalid holding name.")
+
+    name = name.strip()
+
+    asset_class = holding.get("asset_class")
+
+    if isinstance(asset_class, str):
+        asset_class = asset_class.strip().title()
+
+    if asset_class not in ALLOWED_ASSET_CLASSES:
+        asset_class = "Unclassified"
+
+    page = holding.get("page")
+
+    if (
+        isinstance(page, bool)
+        or not isinstance(page, int)
+        or page < 1
+    ):
+        raise ValueError(
+            f"Invalid page number for {name}: {page}"
+        )
+
+    normalized = {
+        "name": name,
+        "asset_class": asset_class,
+        "sub_category": holding.get("sub_category"),
+        "isin": holding.get("isin"),
+        "folio_number": holding.get("folio_number"),
+
+        "quantity": validate_number(
+            holding.get("quantity"),
+            "quantity",
+            name,
+        ),
+
+        "invested_value": validate_number(
+            holding.get("invested_value"),
+            "invested_value",
+            name,
+        ),
+
+        "current_value": validate_number(
+            holding.get("current_value"),
+            "current_value",
+            name,
+        ),
+
+        "profit_loss": validate_number(
+            holding.get("profit_loss"),
+            "profit_loss",
+            name,
+        ),
+
+        "profit_loss_percentage": validate_number(
+            holding.get("profit_loss_percentage"),
+            "profit_loss_percentage",
+            name,
+        ),
+
+        "source": holding.get("source"),
+
+        "average_nav": validate_number(
+            holding.get("average_nav"),
+            "average_nav",
+            name,
+        ),
+
+        "current_nav": validate_number(
+            holding.get("current_nav"),
+            "current_nav",
+            name,
+        ),
+
+        "page": page,
+    }
+
+    for field in (
+        "sub_category",
+        "isin",
+        "folio_number",
+        "source",
+    ):
+        value = normalized[field]
+
+        if isinstance(value, str):
+            normalized[field] = value.strip() or None
+
+    return normalized
+
+
+# ==================================================
+# GROQ REQUEST WITH RETRY
+# ==================================================
+
+def call_groq_with_retry(messages):
+
+    last_error = None
+
+    for attempt in range(MAX_RETRIES):
+
+        try:
+            print(
+                f"Groq request attempt {attempt + 1}, "
+                f"completion limit: {MAX_COMPLETION_TOKENS}",
+                flush=True,
+            )
+
+            return client.chat.completions.create(
+                model=MODEL_NAME,
+                response_format={"type": "json_object"},
+                messages=messages,
+                temperature=0,
+                max_completion_tokens=MAX_COMPLETION_TOKENS,
+            )
+
+        except RateLimitError as error:
+
+            last_error = error
+
+            wait_time = 15 * (attempt + 1)
+
+            print(
+                f"Groq rate limit reached. "
+                f"Retrying in {wait_time} seconds.",
+                flush=True,
+            )
+
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(wait_time)
+
+        except APIStatusError as error:
+
+            if error.status_code == 413:
+                raise RequestTooLargeError(
+                    "Groq request exceeded the allowed request size."
+                ) from error
+
+            if error.status_code == 429:
+
+                last_error = error
+                wait_time = 15 * (attempt + 1)
+
+                print(
+                    f"Groq temporarily unavailable. "
+                    f"Retrying in {wait_time} seconds.",
+                    flush=True,
+                )
+
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(wait_time)
+
+            else:
+                raise
+
+    raise RuntimeError(
+        f"Groq request failed after {MAX_RETRIES} attempts: "
+        f"{last_error}"
+    )
+
+
+# ==================================================
+# EXTRACT ONE BATCH
+# ==================================================
 
 def extract_batch_from_groq(batch_pages):
 
@@ -117,143 +345,119 @@ def extract_batch_from_groq(batch_pages):
     )
 
     prompt = f"""
-Extract individual investment holdings from this financial document.
+Extract investment holdings from this financial statement.
 
 Return ONLY valid JSON in this structure:
 
 {{
-    "report_date": "2026-10-31",
+    "currency": "USD",
+    "report_date": "2021-03-31",
+    "reported_portfolio_value": 1656064.53,
     "holdings": [
         {{
-            "name": "HDFC Bank",
+            "name": "AMAZON.COM INC",
             "asset_class": "Equity",
-            "sub_category": "Large Cap",
-            "isin": "INE040A01034",
-            "folio_number": "123456",
-            "quantity": 10,
-            "invested_value": 100000,
-            "current_value": 115000,
-            "profit_loss": 15000,
-            "profit_loss_percentage": 15,
-            "source": "Mutual Fund Statement",
-            "average_nav": 100,
-            "current_nav": 115,
-            "page": 1
+            "sub_category": null,
+            "isin": null,
+            "folio_number": null,
+            "quantity": 30,
+            "invested_value": 101830.90,
+            "current_value": 92822.40,
+            "profit_loss": -9008.50,
+            "profit_loss_percentage": null,
+            "source": "J.P. Morgan Self-Directed Investing",
+            "average_nav": null,
+            "current_nav": null,
+            "page": 6
         }}
     ]
 }}
 
-STRICT EXTRACTION RULES:
+EXTRACTION RULES:
 
-1. Extract only investments actually belonging to the investor.
-
-2. Do not extract benchmark data, market statistics, sector
-   totals, asset allocation percentages or summary totals
-   as individual holdings.
-
-3. Extract individual investment records wherever available.
-
-4. Do not invent, estimate or calculate missing financial values.
-
-5. Return null for unavailable fields.
-
-6. Use market value or current valuation as current_value.
-
-7. Use cost value, purchase value or invested amount as
-   invested_value only when explicitly available.
-
-8. Extract ISIN, folio number and quantity exactly as printed.
-
-9. Extract profit/loss and its percentage only when explicitly
-   available in the document.
-
-10. Preserve the original page number.
-
-11. Do not extract underlying stocks of mutual funds as
-    separately owned investments.
-
-12. Do not combine different investments into one holding.
-
-13. Do not remove records merely because their names are
-    identical. Different folios or accounts may represent
-    separate investments.
-
-14. Do not treat a repeated investment name as proof that
-    two records are duplicates.
-
-15. Do not extract scheme names from loads, fees, exit load
-    descriptions, disclaimers or explanatory text.
-
-16. A scheme name alone is not an investment record.
-    It must have actual holding-related financial information.
-
-17. Do not interpret investor names, account holder names,
-    nominees or contact details as investment names.
-
-18. Return numeric values without currency symbols or commas.
-
-19. Use INR as the document currency unless another currency
-    is explicitly identified. Do not convert currencies.
-
-20. Return an empty holdings array if the pages contain no
-    actual individual investment records.
-
-21. Return report_date as the statement's valuation date,
-    portfolio as-of date, or statement generation date,
-    only when explicitly identifiable.
-
-22. Do not use transaction dates, purchase dates, due dates,
-    financial year dates, or upload dates as report_date.
-
-23. If the statement date cannot be identified confidently,
-    return null.
-
-24. Return report_date in YYYY-MM-DD format only.
-
-25. Do not include explanatory text outside the JSON.
+1. Extract only investments actually owned by the account holder.
+2. Do not extract benchmarks, market statistics, allocation percentages,
+    sector totals, transactions, fees or explanatory text as holdings.
+3. Never invent, estimate or calculate missing values. Use null.
+4. current_value means the holding's market value.
+5. invested_value means cost basis or purchase value only when printed.
+6. Extract quantity, prices and identifiers only when explicitly available.
+7. Do not put ticker symbols in ISIN.
+8. Preserve the actual page number shown in the document.
+9. Do not extract underlying securities of funds as separate holdings.
+10. Do not combine unrelated holdings or separate investment lots.
+11. A name alone is not a holding; financial holding information is required.
+12. Do not duplicate a fully reported holding on an adjacent continuation page.
+13. Return numbers without currency symbols or commas.
+14. Currency must be explicitly identified. Never assume INR.
+15. report_date must be the current statement period's ending date
+    or explicit current valuation date.
+16. Never use previous statement dates, transaction dates, purchase dates,
+    trade dates, financial-year dates or upload dates.
+17. For a period such as February 27 - March 31, 2021,
+    use 2021-03-31.
+18. reported_portfolio_value must be the explicitly printed current
+    total account or portfolio value.
+19. Do not use previous-period value, cash balance, equity total
+    or year-to-date deposits as portfolio value.
+20. If the current total portfolio value is not identifiable, use null.
+21. Use YYYY-MM-DD for report_date.
+22. Asset class must be one of:
+    Equity, Debt, Hybrid, Liquid, Gold, Real Estate, Cash, Unclassified.
+23. If asset class cannot be confidently determined, use null.
+24. If no holdings appear on a page, return an empty holdings array.
+25. Return no explanatory text outside JSON.
 
 DOCUMENT:
 
 {document_text}
 """
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        response_format={"type": "json_object"},
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a financial document extraction system. "
-                    "Extract only explicitly supported investment data. "
-                    "Never invent financial values or dates. "
-                    "Return valid JSON only."
-                )
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0,
-        max_completion_tokens=4000
-    )
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a precise financial statement extraction engine. "
+                "Never invent financial values, dates, currencies or holdings. "
+                "Return valid JSON only."
+            ),
+        },
+        {
+            "role": "user",
+            "content": prompt,
+        },
+    ]
+
+    response = call_groq_with_retry(messages)
 
     choice = response.choices[0]
 
-    print("FINISH REASON:", choice.finish_reason)
+    print(
+        "FINISH REASON:",
+        choice.finish_reason,
+        flush=True,
+    )
 
     raw_response = choice.message.content
 
     if not raw_response:
         raise ValueError("Groq returned an empty response.")
 
+    if choice.finish_reason == "length":
+        raise TruncatedResponseError(
+            "Groq response was truncated."
+        )
+
     try:
         result = json.loads(raw_response)
 
     except json.JSONDecodeError as error:
-        print("INVALID GROQ RESPONSE:")
-        print(raw_response)
+
+        print(
+            "INVALID GROQ RESPONSE:",
+            raw_response,
+            flush=True,
+        )
 
         raise ValueError(
             "Groq returned invalid JSON."
@@ -266,7 +470,6 @@ DOCUMENT:
         raise ValueError("Invalid batch holdings.")
 
     for holding in result["holdings"]:
-
         if not isinstance(holding, dict):
             raise ValueError("Invalid holding returned by Groq.")
 
@@ -274,139 +477,316 @@ DOCUMENT:
         result.get("report_date")
     )
 
-    print("EXTRACTED BATCH HOLDINGS:", result["holdings"])
-    print("EXTRACTED REPORT DATE:", report_date)
+    currency = normalize_currency(
+        result.get("currency")
+    )
+
+    reported_value = validate_number(
+        result.get("reported_portfolio_value"),
+        "reported_portfolio_value",
+        "portfolio",
+    )
+
+    print(
+        "EXTRACTED BATCH HOLDINGS:",
+        len(result["holdings"]),
+        flush=True,
+    )
+
+    print("EXTRACTED REPORT DATE:", report_date, flush=True)
+    print("EXTRACTED CURRENCY:", currency, flush=True)
+    print("REPORTED PORTFOLIO VALUE:", reported_value, flush=True)
 
     return {
         "holdings": result["holdings"],
-        "report_date": report_date
+        "report_date": report_date,
+        "currency": currency,
+        "reported_portfolio_value": reported_value,
     }
 
 
-# --------------------------------------------------
-# NORMALIZE AND VALIDATE HOLDINGS
-# --------------------------------------------------
+# ==================================================
+# METADATA MERGING
+# ==================================================
 
-def normalize_holding(holding):
+def merge_metadata_value(left, right, field_name):
 
-    name = holding.get("name")
+    if left is None:
+        return right
 
-    if not isinstance(name, str) or not name.strip():
-        raise ValueError("Invalid holding name.")
+    if right is None:
+        return left
 
-    asset_class = holding.get("asset_class")
+    if left == right:
+        return left
 
-    if not isinstance(asset_class, str) or not asset_class.strip():
-        raise ValueError(
-            f"Invalid asset class for {name}."
+    print(
+        f"WARNING: Conflicting {field_name}: {left} vs {right}",
+        flush=True,
+    )
+
+    return None
+
+
+def merge_batch_results(left, right):
+
+    return {
+        "holdings": left["holdings"] + right["holdings"],
+
+        "report_date": merge_metadata_value(
+            left["report_date"],
+            right["report_date"],
+            "report dates",
+        ),
+
+        "currency": merge_metadata_value(
+            left["currency"],
+            right["currency"],
+            "currencies",
+        ),
+
+        "reported_portfolio_value": merge_metadata_value(
+            left["reported_portfolio_value"],
+            right["reported_portfolio_value"],
+            "portfolio values",
+        ),
+    }
+
+
+# ==================================================
+# SAFE PAGE SPLITTING
+# ==================================================
+
+def split_page_text(page):
+
+    text = page["text"]
+
+    lines = text.splitlines()
+
+    if len(lines) >= MIN_LINES_TO_SPLIT:
+
+        middle = len(lines) // 2
+        overlap = min(LINE_OVERLAP, middle - 1)
+
+        first_text = "\n".join(
+            lines[:middle + overlap]
         )
 
-    page = holding.get("page")
+        second_text = "\n".join(
+            lines[middle - overlap:]
+        )
+
+        if (
+            first_text
+            and second_text
+            and len(first_text) < len(text)
+            and len(second_text) < len(text)
+        ):
+            return (
+                {
+                    "page": page["page"],
+                    "text": first_text,
+                },
+                {
+                    "page": page["page"],
+                    "text": second_text,
+                },
+            )
+
+    # Fall back to character-based splitting.
+    if len(text) < MIN_CHARS_TO_SPLIT:
+        raise ValueError(
+            f"Cannot safely split page {page['page']} further."
+        )
+
+    middle = len(text) // 2
+
+    first_text = text[:middle + CHAR_OVERLAP]
+    second_text = text[middle - CHAR_OVERLAP:]
 
     if (
-        isinstance(page, bool)
-        or not isinstance(page, int)
-        or page < 1
+        len(first_text) >= len(text)
+        or len(second_text) >= len(text)
     ):
         raise ValueError(
-            f"Invalid page number for {name}."
+            f"Cannot safely split page {page['page']} further."
         )
 
-    normalized = {
-        "name": name.strip(),
-        "asset_class": asset_class.strip(),
-        "sub_category": holding.get("sub_category"),
-        "isin": holding.get("isin"),
-        "folio_number": holding.get("folio_number"),
+    return (
+        {
+            "page": page["page"],
+            "text": first_text,
+        },
+        {
+            "page": page["page"],
+            "text": second_text,
+        },
+    )
 
-        "quantity": validate_number(
+
+# ==================================================
+# RECURSIVE EXTRACTION
+# ==================================================
+
+def extract_batch_with_splitting(batch_pages):
+
+    if not batch_pages:
+        return {
+            "holdings": [],
+            "report_date": None,
+            "currency": None,
+            "reported_portfolio_value": None,
+        }
+
+    try:
+
+        return extract_batch_from_groq(batch_pages)
+
+    except TruncatedResponseError:
+
+        print(
+            "Response truncated. Splitting batch...",
+            flush=True,
+        )
+
+    except RequestTooLargeError:
+
+        print(
+            "Request too large. Splitting batch...",
+            flush=True,
+        )
+
+    except BadRequestError as error:
+
+        if not is_truncation_error(error):
+            raise
+
+        print(
+            "Groq JSON generation failed. "
+            "Splitting batch into smaller sections...",
+            flush=True,
+        )
+
+    # Split multiple pages first.
+    if len(batch_pages) > 1:
+
+        middle = len(batch_pages) // 2
+
+        left = extract_batch_with_splitting(
+            batch_pages[:middle]
+        )
+
+        time.sleep(BATCH_DELAY)
+
+        right = extract_batch_with_splitting(
+            batch_pages[middle:]
+        )
+
+        return merge_batch_results(left, right)
+
+    # A single page is still too large.
+    page = batch_pages[0]
+
+    first_half, second_half = split_page_text(page)
+
+    left = extract_batch_with_splitting(
+        [first_half]
+    )
+
+    time.sleep(BATCH_DELAY)
+
+    right = extract_batch_with_splitting(
+        [second_half]
+    )
+
+    return merge_batch_results(left, right)
+
+
+# ==================================================
+# CONTINUATION RECONCILIATION
+# ==================================================
+
+def reconcile_continuation_rows(holdings):
+
+    result = []
+    seen = set()
+
+    for holding in holdings:
+
+        identity = (
+            holding.get("isin") or "",
+            holding["name"].strip().upper(),
+            holding.get("page"),
             holding.get("quantity"),
-            "quantity",
-            name
-        ),
-
-        "invested_value": validate_number(
             holding.get("invested_value"),
-            "invested_value",
-            name
-        ),
-
-        "current_value": validate_number(
             holding.get("current_value"),
-            "current_value",
-            name
-        ),
-
-        "profit_loss": validate_number(
             holding.get("profit_loss"),
-            "profit_loss",
-            name
-        ),
-
-        "profit_loss_percentage": validate_number(
-            holding.get("profit_loss_percentage"),
-            "profit_loss_percentage",
-            name
-        ),
-
-        "source": holding.get("source"),
-
-        "average_nav": validate_number(
             holding.get("average_nav"),
-            "average_nav",
-            name
-        ),
-
-        "current_nav": validate_number(
             holding.get("current_nav"),
-            "current_nav",
-            name
-        ),
+        )
 
-        "page": page
-    }
+        # Remove only exact duplicates from overlapping
+        # extraction of the same page.
+        if identity in seen:
+            print(
+                "Duplicate overlapping record skipped:",
+                holding["name"],
+                "Page:",
+                holding["page"],
+                flush=True,
+            )
+            continue
 
-    for field in [
-        "sub_category",
-        "isin",
-        "folio_number",
-        "source"
-    ]:
+        seen.add(identity)
+        result.append(holding)
 
-        value = normalized[field]
-
-        if isinstance(value, str):
-            normalized[field] = value.strip() or None
-
-    return normalized
+    return result
 
 
-# --------------------------------------------------
-# EXTRACT PORTFOLIO FROM COMPLETE PDF
-# --------------------------------------------------
+# ==================================================
+# COMPLETE PDF EXTRACTION
+# ==================================================
 
 def extract_portfolio_from_pdf(file_path):
 
     pages = extract_text_from_pdf(file_path)
 
     if not pages:
-        raise ValueError("No readable text found in PDF.")
+        raise ValueError(
+            "No readable text found in PDF."
+        )
 
     batches = create_page_batches(
         pages,
-        batch_size=BATCH_SIZE
+        batch_size=BATCH_SIZE,
     )
 
     all_holdings = []
     report_dates = []
+    currencies = []
+    reported_values = []
 
     for index, batch in enumerate(batches):
 
         print(
-            f"Processing batch {index + 1}/{len(batches)}"
+            f"\nProcessing batch {index + 1}/{len(batches)}",
+            flush=True,
         )
 
-        batch_result = extract_batch_from_groq(batch)
+        try:
+
+            batch_result = extract_batch_with_splitting(
+                batch
+            )
+
+        except Exception as error:
+
+            print(
+                f"FAILED BATCH {index + 1}: {error}",
+                flush=True,
+            )
+
+            raise
 
         all_holdings.extend(
             batch_result["holdings"]
@@ -417,78 +797,165 @@ def extract_portfolio_from_pdf(file_path):
                 batch_result["report_date"]
             )
 
-        if index < len(batches) - 1:
-
-            print(
-                f"Waiting {BATCH_DELAY} seconds before next batch..."
+        if batch_result["currency"]:
+            currencies.append(
+                batch_result["currency"]
             )
 
+        if batch_result["reported_portfolio_value"] is not None:
+            reported_values.append(
+                batch_result["reported_portfolio_value"]
+            )
+
+        if index < len(batches) - 1:
             time.sleep(BATCH_DELAY)
 
     if not all_holdings:
-        raise ValueError("No portfolio holdings found.")
-
-    # --------------------------------------------------
-    # NORMALIZE RECORDS
-    # --------------------------------------------------
-
-    normalized_holdings = []
-
-    for holding in all_holdings:
-        normalized_holdings.append(
-            normalize_holding(holding)
+        raise ValueError(
+            "No portfolio holdings found."
         )
 
-    # Do not deduplicate here.
-    # Reconciliation belongs in the Node backend.
+    normalized_holdings = [
+        normalize_holding(holding)
+        for holding in all_holdings
+    ]
 
-    # --------------------------------------------------
-    # RESOLVE REPORT DATE
-    # --------------------------------------------------
-
-    distinct_dates = set(report_dates)
-
-    if len(distinct_dates) == 1:
-        report_date = distinct_dates.pop()
-    else:
-        # Conflicting or unavailable dates must not be guessed.
-        report_date = None
-
-    # --------------------------------------------------
-    # CALCULATE TOTAL ONLY WHEN COMPLETE
-    # --------------------------------------------------
-
-    all_values_available = all(
-        holding["current_value"] is not None
-        for holding in normalized_holdings
+    normalized_holdings = reconcile_continuation_rows(
+        normalized_holdings
     )
 
-    if all_values_available:
+    # Resolve metadata only when values agree.
+    distinct_dates = set(report_dates)
+    distinct_currencies = set(currencies)
+    distinct_values = set(reported_values)
 
-        calculated_total = sum(
-            holding["current_value"]
-            for holding in normalized_holdings
+    report_date = (
+        next(iter(distinct_dates))
+        if len(distinct_dates) == 1
+        else None
+    )
+
+    currency = (
+        next(iter(distinct_currencies))
+        if len(distinct_currencies) == 1
+        else None
+    )
+
+    total_value = (
+        next(iter(distinct_values))
+        if len(distinct_values) == 1
+        else None
+    )
+
+    if len(distinct_dates) > 1:
+        print(
+            "WARNING: Conflicting report dates:",
+            distinct_dates,
+            flush=True,
         )
 
-        total_value = round(calculated_total, 2)
+    if len(distinct_currencies) > 1:
+        print(
+            "WARNING: Conflicting currencies:",
+            distinct_currencies,
+            flush=True,
+        )
 
-    else:
-        total_value = None
-
-    # --------------------------------------------------
-    # BUILD RESULT
-    # --------------------------------------------------
+    if len(distinct_values) > 1:
+        print(
+            "WARNING: Conflicting portfolio totals:",
+            distinct_values,
+            flush=True,
+        )
 
     result = {
-        "currency": "INR",
+        "currency": currency,
         "total_value": total_value,
         "report_date": report_date,
-        "holdings": normalized_holdings
+        "holdings": normalized_holdings,
     }
 
-    print("EXTRACTION COMPLETED")
-    print("Total extracted records:", len(normalized_holdings))
-    print("Portfolio value:", result["total_value"])
-    print("Statement date:", result["report_date"])
+    # Final extraction logs.
+    print("\nEXTRACTION COMPLETED", flush=True)
+
+    print(
+        "TOTAL HOLDINGS:",
+        len(normalized_holdings),
+        flush=True,
+    )
+
+    print(
+        "PORTFOLIO VALUE:",
+        total_value,
+        flush=True,
+    )
+
+    print(
+        "CURRENCY:",
+        currency,
+        flush=True,
+    )
+
+    print(
+        "STATEMENT DATE:",
+        report_date,
+        flush=True,
+    )
+
+    print("\nEXTRACTED HOLDINGS:", flush=True)
+
+    for holding in normalized_holdings:
+
+        print(
+            holding["page"],
+            holding["name"],
+            "Quantity:",
+            holding["quantity"],
+            "Current value:",
+            holding["current_value"],
+            flush=True,
+        )
 
     return result
+
+
+# ==================================================
+# FASTAPI ENDPOINTS
+# ==================================================
+
+app = FastAPI()
+
+
+@app.post("/analytics")
+def analytics_endpoint():
+    return {"status": "success", "message": "Analytics processed."}
+
+
+@app.post("/risk")
+def risk_endpoint():
+    return {"status": "success", "message": "Risk processed."}
+
+
+@app.delete("/documents/{document_id}")
+def delete_document(document_id: str, client_id: str, stored_filename: str):
+    file_path = BASE_DIR / "data" / "uploads" / client_id / stored_filename
+
+    try:
+        if file_path.exists():
+            # Retry unlinking to avoid WinError 32 if background process has temporary lock
+            for attempt in range(3):
+                try:
+                    file_path.unlink()
+                    break
+                except PermissionError:
+                    if attempt == 2:
+                        raise
+                    time.sleep(0.5)
+
+        print("FAISS index and documents saved successfully.", flush=True)
+        return {
+            "status": "success",
+            "message": "Document deleted successfully.",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) 

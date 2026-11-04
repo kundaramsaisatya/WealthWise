@@ -566,6 +566,153 @@ app.get("/", requireAuth, async (req, res) => {
 });
 
 
+ // --------------------------------------------------
+ // HISTORICAL PORTFOLIO PERFORMANCE
+ // --------------------------------------------------
+
+app.get("/performance", requireAuth, async (req, res) => {
+
+    try {
+        const clientId = req.session.user.clientId;
+
+        // Fetch only this client's historical portfolio records.
+        const portfolios = await Portfolio.find({ clientId })
+            .sort({ reportDate: 1, createdAt: 1 })
+            .lean();
+            
+        console.log("\n========== PERFORMANCE DEBUG ==========");
+        console.log("Client ID:", clientId);
+        console.log("Total portfolio records:", portfolios.length);
+
+        console.log(
+            "Demo records:",
+            portfolios.filter(isDemoDocument).length
+        );
+
+        console.log(
+            "Records without report date:",
+            portfolios.filter(p => !p.reportDate).length
+        );
+
+        console.log(
+            "Records with report date:",
+            portfolios.filter(p => p.reportDate).length
+        );
+
+        console.log(
+            "Report dates:",
+            portfolios.map(p => p.reportDate)
+        );
+
+        console.log("=======================================\n");
+
+        // Exclude demo records and records without reliable report dates.
+        const validRecords = portfolios.filter(snapshot => {
+            if (isDemoDocument(snapshot)) return false;
+            if (!snapshot.reportDate) return false;
+
+            const date = new Date(snapshot.reportDate);
+
+            return !Number.isNaN(date.getTime());
+        });
+
+        // Group records by report date.
+        const recordsByDate = new Map();
+
+        for (const record of validRecords) {
+            const dateKey = new Date(record.reportDate)
+                .toISOString()
+                .slice(0, 10);
+
+            if (!recordsByDate.has(dateKey)) {
+                recordsByDate.set(dateKey, []);
+            }
+
+            recordsByDate.get(dateKey).push(record);
+        }
+
+        const snapshots = [];
+        const skippedDates = [];
+
+        for (const [date, records] of recordsByDate.entries()) {
+
+            // Multiple documents on the same date may overlap.
+            if (records.length !== 1) {
+                skippedDates.push({
+                    report_date: date,
+                    reason: "Multiple documents exist for this date."
+                });
+                continue;
+            }
+
+            const record = records[0];
+            const holdings = record.holdings || [];
+
+            // Do not treat missing values as zero.
+            const hasCompleteValues =
+                holdings.length > 0 &&
+                holdings.every(holding =>
+                    isValidNumber(holding.currentValue) &&
+                    holding.currentValue >= 0
+                );
+
+            if (!hasCompleteValues) {
+                skippedDates.push({
+                    report_date: date,
+                    reason: "Some holdings have missing or invalid current values."
+                });
+                continue;
+            }
+
+            if (
+                !isValidNumber(record.totalValue) ||
+                record.totalValue < 0
+            ) {
+                skippedDates.push({
+                    report_date: date,
+                    reason: "Invalid portfolio total."
+                });
+                continue;
+            }
+
+            snapshots.push({
+                report_date: date,
+                total_value: record.totalValue
+            });
+        }
+
+        // Send historical snapshots to the Python engine.
+        const response = await axios.post(
+            `${AI_URL}/performance`,
+            {
+                client_id: clientId,
+                snapshots
+            },
+            {
+                headers: getServiceHeaders(),
+                timeout: 30000
+            }
+        );
+
+        return res.json({
+            performance: response.data.performance,
+            skipped_dates: skippedDates,
+            source: "MongoDB Portfolio records"
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Performance route error:",
+            error.response?.data || error.message
+        );
+
+        return res.status(500).json({
+            error: "Unable to calculate historical performance."
+        });
+    }
+});
+
 // --------------------------------------------------
 // UPLOAD DOCUMENTS
 // --------------------------------------------------
@@ -620,6 +767,10 @@ app.post(
                     fileSize: file.size,
                     status: "processing"
                 });
+                form.append(
+                    "document_id",
+                    documentRecord._id.toString()
+                );
 
                 const response = await axios.post(
                     `${AI_URL}/upload`,
@@ -631,6 +782,18 @@ app.post(
                         },
                         timeout: 120000,
                         maxBodyLength: Infinity
+                    }
+                );
+                const storedFilename = response.data.stored_filename;
+
+                if (!storedFilename) {
+                    throw new Error("AI service did not return stored filename.");
+                }
+
+                await Document.findByIdAndUpdate(
+                    documentRecord._id,
+                    {
+                        storedName: storedFilename
                     }
                 );
 
@@ -1130,6 +1293,81 @@ app.post("/portfolio/sync", requireAuth, async (req, res) => {
 // --------------------------------------------------
 // DOCUMENT LIST
 // --------------------------------------------------
+// --------------------------------------------------
+// DELETE DOCUMENT
+// --------------------------------------------------
+
+app.delete("/documents/:id", requireAuth, async (req, res) => {
+
+    try {
+        const clientId = req.session.user.clientId;
+        const documentId = req.params.id;
+
+        if (!/^[a-fA-F0-9]{24}$/.test(documentId)) {
+            return res.status(400).json({
+                error: "Invalid document ID."
+            });
+        }
+
+        // 1. Verify ownership
+        const document = await Document.findOne({
+            _id: documentId,
+            clientId
+        });
+        console.log("STORED FILENAME:", document?.storedName);
+
+        if (!document) {
+            return res.status(404).json({
+                error: "Document not found."
+            });
+        }
+
+        if (!document.storedName) {
+            return res.status(409).json({
+                error: "Stored filename is missing."
+            });
+        }
+
+        // 2. Delete original file and FAISS chunks
+        
+        await axios.delete(
+            `${AI_URL}/documents/${documentId}`,
+            {
+                headers: getServiceHeaders(),
+                params: {
+                    client_id: clientId,
+                    stored_filename: document.storedName
+                },
+                timeout: 60000
+            }
+        );
+        // 3. Delete associated portfolio records
+        await Portfolio.deleteMany({
+            clientId,
+            documentId: document._id
+        });
+
+        // 4. Delete MongoDB document metadata
+        await Document.deleteOne({
+            _id: document._id,
+            clientId
+        });
+
+        return res.json({
+            message: "Document deleted successfully."
+        });
+
+    } catch (error) {
+        console.error(
+            "Document deletion error:",
+             JSON.stringify(error.response?.data || error.message, null, 2)
+        );
+
+        return res.status(500).json({
+            error: "Unable to delete document."
+        });
+    }
+});
 
 app.get("/documents", requireAuth, async (req, res) => {
 
@@ -1142,6 +1380,7 @@ app.get("/documents", requireAuth, async (req, res) => {
 
         res.json({
             documents: documents.map(doc => ({
+                id: doc._id.toString(),
                 name: doc.originalName,
                 type: (doc.fileType || "unknown").toUpperCase(),
                 size: doc.fileSize,
