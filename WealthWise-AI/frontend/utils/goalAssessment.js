@@ -53,7 +53,7 @@ function buildGoalRecommendations(assessment, riskFlags = []) {
             `${flag.holding_name} represents ${flag.holding_percentage}% of the portfolio, exceeding the configured limit of ${flag.configured_limit}%. Review this holding's allocation with a qualified financial adviser.`;
     } else {
             action =
-                "Review whether too much of this goal's allocated value depends on a small number of holdings.";
+    "Review whether this holding is too heavily weighted in the goal allocation. Consider the impact of reducing concentration with a qualified financial adviser.";
         }
     } else if (flag.type === "Liquidity") {
             title = "Review liquidity allocation";
