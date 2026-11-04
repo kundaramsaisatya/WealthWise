@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WealthWise AI | Profile Settings</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="auth-container">
+    <form action="/profile/risk-tolerance"
+          method="POST"
+          class="auth-card">
+
+        <h1>Profile Settings</h1>
+        <p>Configure your investment risk preference.</p>
+
+        <% if (success) { %>
+            <p style="color: green;">
+                Risk preference updated successfully.
+            </p>
+        <% } %>
+
+        <label for="riskTolerance">Risk Tolerance</label>
+
+        <select
+            name="riskTolerance"
+            id="riskTolerance"
+            required
+            style="width: 100%; padding: 12px; margin: 10px 0 20px;"
+        >
+            <option value="">Select your preference</option>
+
+            <option value="conservative"
+                <%= riskTolerance === "conservative" ? "selected" : "" %>>
+                Conservative
+            </option>
+
+            <option value="moderate"
+                <%= riskTolerance === "moderate" ? "selected" : "" %>>
+                Moderate
+            </option>
+
+            <option value="aggressive"
+                <%= riskTolerance === "aggressive" ? "selected" : "" %>>
+                Aggressive
+            </option>
+        </select>
+
+        <p>
+            Conservative: Prioritizes lower portfolio risk.
+        </p>
+
+        <p>
+            Moderate: Balances risk and potential returns.
+        </p>
+
+        <p>
+            Aggressive: Accepts higher portfolio risk.
+        </p>
+
+        <button type="submit">Save Preferences</button>
+
+        <p>
+            <a href="/">Back to Dashboard</a>
+        </p>
+
+    </form>
+</div>
+
+</body>
+</html>
