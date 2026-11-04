@@ -1440,7 +1440,6 @@ const allowedGoalFields = [
     "category",
     "targetAmount",
     "currentSavings",
-    "portfolioAllocatedAmount",
     "targetDate",
     "inflationRate",
     "expectedAnnualReturn",
@@ -1480,7 +1479,6 @@ function validateGoalInput(data, isUpdate = false) {
         "targetAmount",
         "currentSavings",
         "inflationRate",
-        "portfolioAllocatedAmount",
         "expectedAnnualReturn",
         "monthlyContribution"
     ];
