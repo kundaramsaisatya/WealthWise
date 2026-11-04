@@ -19,6 +19,7 @@ const fs = require("fs");
 const Portfolio = require("./models/Portfolio");
 const Document = require("./models/Document");
 const connectDB = require("./config/database");
+const GoalHoldingAllocation = require("./models/GoalHoldingAllocation");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,6 +59,11 @@ const FinancialGoal = require("./models/FinancialGoal");
 const {
     calculateGoalPlan
 } = require("./utils/goalCalculator");
+
+//another
+const {
+    calculateGoalAssessment
+} = require("./utils/goalAssessment");
 
 // --------------------------------------------------
 // SHARED HELPERS
@@ -120,12 +126,27 @@ function getSnapshotDate(snapshot) {
         : parsed;
 }
 
+
 function getHoldingKey(holding, snapshot) {
+
     const isin = normalizeIdentifier(holding.isin);
     const folio = normalizeIdentifier(holding.folioNumber);
     const name = normalizeName(holding.name);
 
-    // Same security in the same folio.
+    const subCategory = String(
+        holding.subCategory || ""
+    ).trim().toLowerCase();
+
+    // Listed stocks: use ISIN as the stable identity.
+    // This remains consistent across different statement uploads.
+    if (
+        isin &&
+        subCategory === "listed shares"
+    ) {
+        return `ISIN:${isin}|ASSET:LISTED`;
+    }
+
+    // Mutual funds and other folio-based investments.
     if (isin && folio) {
         return `ISIN:${isin}|FOLIO:${folio}`;
     }
@@ -135,9 +156,10 @@ function getHoldingKey(holding, snapshot) {
         return `FOLIO:${folio}|NAME:${name}`;
     }
 
-    // Never merge using ISIN alone or name alone.
+    // Never merge using name alone.
     return `DOCUMENT:${snapshot._id}|HOLDING:${holding._id || crypto.randomUUID()}`;
 }
+
 
 
 // --------------------------------------------------
@@ -1418,6 +1440,7 @@ const allowedGoalFields = [
     "category",
     "targetAmount",
     "currentSavings",
+    "portfolioAllocatedAmount",
     "targetDate",
     "inflationRate",
     "expectedAnnualReturn",
@@ -1457,6 +1480,7 @@ function validateGoalInput(data, isUpdate = false) {
         "targetAmount",
         "currentSavings",
         "inflationRate",
+        "portfolioAllocatedAmount",
         "expectedAnnualReturn",
         "monthlyContribution"
     ];
@@ -1658,7 +1682,316 @@ app.put("/goals/:id", requireAuth, async (req, res) => {
 });
 
 
+// --------------------------------------------------
+// GET HOLDINGS AVAILABLE FOR A GOAL
+// --------------------------------------------------
+
+app.get("/goals/:id/holdings", requireAuth, async (req, res) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({
+                error: "Invalid goal ID."
+            });
+        }
+
+        const clientId = req.session.user.clientId;
+
+        const goal = await FinancialGoal.findOne({
+            _id: req.params.id,
+            clientId
+        }).lean();
+
+        if (!goal) {
+            return res.status(404).json({
+                error: "Goal not found."
+            });
+        }
+
+        const snapshots = await Portfolio.find({ clientId }).lean();
+        const consolidated = consolidatePortfolios(snapshots);
+
+        const verifiedHoldings = consolidated.portfolio.holdings.filter(
+            holding =>
+                typeof holding.currentValue === "number" &&
+                Number.isFinite(holding.currentValue) &&
+                holding.currentValue >= 0 &&
+                !holding.hasConflict
+        );
+
+        const allocations = await GoalHoldingAllocation.find({
+            clientId
+        }).lean();
+
+        const result = verifiedHoldings.map(holding => {
+            const holdingAllocations = allocations.filter(
+                allocation =>
+                    allocation.holdingKey === holding.holdingKey
+            );
+
+            const thisGoalAllocation = holdingAllocations
+                .filter(
+                    allocation =>
+                        String(allocation.goalId) === String(goal._id)
+                )
+                .reduce((sum, item) => sum + item.amount, 0);
+
+            const otherGoalsAllocation = holdingAllocations
+                .filter(
+                    allocation =>
+                        String(allocation.goalId) !== String(goal._id)
+                )
+                .reduce((sum, item) => sum + item.amount, 0);
+
+            // Subtract allocations to ALL goals.
+            const availableAmount = Math.max(
+                0,
+                holding.currentValue -
+                thisGoalAllocation -
+                otherGoalsAllocation
+            );
+            console.log({
+            holding: holding.name,
+            currentValue: holding.currentValue,
+            thisGoalAllocation,
+            otherGoalsAllocation
+        });
+
+            return {
+                holdingKey: holding.holdingKey,
+                name: holding.name,
+                assetClass: holding.assetClass,
+                subCategory: holding.subCategory,
+                isin: holding.isin,
+                currentValue: holding.currentValue,
+                allocatedToThisGoal: Number(
+                    thisGoalAllocation.toFixed(2)
+                ),
+                allocatedToOtherGoals: Number(
+                    otherGoalsAllocation.toFixed(2)
+                ),
+                availableAmount: Number(
+                    availableAmount.toFixed(2)
+                )
+            };
+        });
+
+        const totalAllocatedToThisGoal = result.reduce(
+            (sum, holding) => sum + holding.allocatedToThisGoal,
+            0
+        );
+
+        return res.json({
+            goal: {
+                id: goal._id,
+                name: goal.name
+            },
+            holdings: result,
+            totalAllocatedToThisGoal: Number(
+                totalAllocatedToThisGoal.toFixed(2)
+            )
+        });
+
+    } catch (error) {
+        console.error("Goal holdings error:", error);
+
+        return res.status(500).json({
+            error: "Unable to load available holdings."
+        });
+    }
+});
+
+
+// --------------------------------------------------
+// SAVE HOLDING ALLOCATIONS FOR A GOAL
+// --------------------------------------------------
+
+app.put("/goals/:id/allocations", requireAuth, async (req, res) => {
+    const session = await mongoose.startSession();
+
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ error: "Invalid goal ID." });
+        }
+
+        const { allocations } = req.body;
+
+        if (!Array.isArray(allocations)) {
+            return res.status(400).json({
+                error: "allocations must be an array."
+            });
+        }
+
+        const seenKeys = new Set();
+
+        for (const item of allocations) {
+            if (
+                !item ||
+                typeof item.holdingKey !== "string" ||
+                !item.holdingKey.trim() ||
+                typeof item.amount !== "number" ||
+                !Number.isFinite(item.amount) ||
+                item.amount <= 0
+            ) {
+                return res.status(400).json({
+                    error: "Each allocation needs a valid holdingKey and positive amount."
+                });
+            }
+
+            if (seenKeys.has(item.holdingKey)) {
+                return res.status(400).json({
+                    error: "A holding can appear only once in this request."
+                });
+            }
+
+            seenKeys.add(item.holdingKey);
+        }
+
+        const clientId = req.session.user.clientId;
+        let responseData;
+
+        await session.withTransaction(async () => {
+
+            const goal = await FinancialGoal.findOne({
+                _id: req.params.id,
+                clientId
+            }).session(session);
+
+            if (!goal) {
+                throw new Error("GOAL_NOT_FOUND");
+            }
+
+            const snapshots = await Portfolio.find({ clientId })
+                .session(session)
+                .lean();
+
+            const consolidated = consolidatePortfolios(snapshots);
+
+            const verifiedHoldings = consolidated.portfolio.holdings.filter(
+                holding =>
+                    typeof holding.currentValue === "number" &&
+                    Number.isFinite(holding.currentValue) &&
+                    holding.currentValue >= 0 &&
+                    !holding.hasConflict
+            );
+
+            const holdingMap = new Map(
+                verifiedHoldings.map(holding => [
+                    holding.holdingKey,
+                    holding
+                ])
+            );
+
+            const otherAllocations = await GoalHoldingAllocation.find({
+                clientId,
+                goalId: { $ne: goal._id }
+            }).session(session).lean();
+
+            const otherTotals = new Map();
+
+            for (const allocation of otherAllocations) {
+                const previous = otherTotals.get(allocation.holdingKey) || 0;
+
+                otherTotals.set(
+                    allocation.holdingKey,
+                    previous + allocation.amount
+                );
+            }
+
+            const newAllocationDocuments = [];
+            let totalAllocated = 0;
+
+            for (const item of allocations) {
+                const holding = holdingMap.get(item.holdingKey);
+
+                if (!holding) {
+                    throw new Error("HOLDING_NOT_AVAILABLE");
+                }
+
+                const alreadyAllocated =
+                    otherTotals.get(item.holdingKey) || 0;
+
+                const availableAmount =
+                    holding.currentValue - alreadyAllocated;
+
+                if (item.amount > availableAmount + 0.001) {
+                    throw new Error(
+                        `ALLOCATION_EXCEEDS_AVAILABLE:${holding.name}:${Math.max(0, availableAmount).toFixed(2)}`
+                    );
+                }
+
+                newAllocationDocuments.push({
+                    clientId,
+                    goalId: goal._id,
+                    holdingKey: holding.holdingKey,
+                    holdingName: holding.name,
+                    amount: Number(item.amount.toFixed(2)),
+                    currency: consolidated.portfolio.currency || "INR"
+                });
+
+                totalAllocated += item.amount;
+            }
+
+            await GoalHoldingAllocation.deleteMany({
+                clientId,
+                goalId: goal._id
+            }).session(session);
+
+            if (newAllocationDocuments.length > 0) {
+                await GoalHoldingAllocation.insertMany(
+                    newAllocationDocuments,
+                    { session }
+                );
+            }
+
+            goal.portfolioAllocatedAmount = Number(
+                totalAllocated.toFixed(2)
+            );
+
+            await goal.save({ session });
+
+            responseData = {
+                message: "Goal allocations saved successfully.",
+                goalId: goal._id,
+                portfolioAllocatedAmount: goal.portfolioAllocatedAmount,
+                allocationCount: newAllocationDocuments.length
+            };
+        });
+
+        return res.json(responseData);
+
+    } catch (error) {
+        console.error("Goal allocation error:", error);
+
+        if (error.message === "GOAL_NOT_FOUND") {
+            return res.status(404).json({ error: "Goal not found." });
+        }
+
+        if (error.message === "HOLDING_NOT_AVAILABLE") {
+            return res.status(400).json({
+                error: "A selected holding is not currently verified in the portfolio."
+            });
+        }
+
+        if (error.message.startsWith("ALLOCATION_EXCEEDS_AVAILABLE:")) {
+            const details = error.message.split(":");
+
+            return res.status(400).json({
+                error: `${details[1]} has only ₹${details[2]} available for this goal.`
+            });
+        }
+
+        return res.status(500).json({
+            error: "Unable to save goal allocations."
+        });
+
+    } finally {
+        await session.endSession();
+    }
+});
+
+
 // DELETE GOAL
+
 
 app.delete("/goals/:id", requireAuth, async (req, res) => {
 
@@ -1670,9 +2003,12 @@ app.delete("/goals/:id", requireAuth, async (req, res) => {
             });
         }
 
-        const goal = await FinancialGoal.findOneAndDelete({
+        const clientId = req.session.user.clientId;
+
+        // Find the goal first
+        const goal = await FinancialGoal.findOne({
             _id: req.params.id,
-            clientId: req.session.user.clientId
+            clientId
         });
 
         if (!goal) {
@@ -1681,13 +2017,25 @@ app.delete("/goals/:id", requireAuth, async (req, res) => {
             });
         }
 
+        // Delete all holding allocations linked to this goal
+        await GoalHoldingAllocation.deleteMany({
+            clientId,
+            goalId: goal._id
+        });
+
+        // Delete the financial goal
+        await FinancialGoal.deleteOne({
+            _id: goal._id,
+            clientId
+        });
+
         return res.json({
-            message: "Financial goal deleted successfully."
+            message: "Financial goal and its holding allocations deleted successfully."
         });
 
     } catch (error) {
 
-        console.error("Goal deletion error:", error.message);
+        console.error("Goal deletion error:", error);
 
         return res.status(500).json({
             error: "Unable to delete financial goal."
@@ -1695,10 +2043,115 @@ app.delete("/goals/:id", requireAuth, async (req, res) => {
     }
 });
 
+
 app.get("/financial-goals", requireAuth, (req, res) => {
     res.render("financial-goals");
 });
 
+
+//calc
+// --------------------------------------------------
+// GOAL-BASED PORTFOLIO ASSESSMENT
+// --------------------------------------------------
+
+app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({
+                error: "Invalid goal ID."
+            });
+        }
+
+        const clientId = req.session.user.clientId;
+
+        // 1. Fetch only this client's goal
+        const goal = await FinancialGoal.findOne({
+            _id: req.params.id,
+            clientId
+        }).lean();
+
+        if (!goal) {
+            return res.status(404).json({
+                error: "Financial goal not found."
+            });
+        }
+
+        // 2. Fetch the client's portfolio snapshots
+        const allPortfolios = await Portfolio.find({ clientId })
+            .sort({ reportDate: -1, createdAt: -1 })
+            .lean();
+
+        // 3. Reuse existing consolidation logic
+        const consolidated = consolidatePortfolios(allPortfolios);
+        const portfolio = consolidated.portfolio;
+
+        if (!portfolio.holdings.length) {
+            return res.status(404).json({
+                error: "No actual portfolio holdings found."
+            });
+        }
+
+        // 4. Build the same verified analytics payload
+        const portfolioPayload = createAnalyticsPayload(
+            clientId,
+            portfolio
+        );
+
+        if (!portfolioPayload.holdings.length) {
+            return res.status(422).json({
+                error: "No verified holdings are available for assessment."
+            });
+        }
+
+        // 5. Run the existing risk engine
+        const riskResponse = await axios.post(
+            `${AI_URL}/risk`,
+            portfolioPayload,
+            {
+                headers: getServiceHeaders(),
+                timeout: 30000
+            }
+        );
+
+        const riskData = riskResponse.data;
+
+        // 6. Calculate goal-based funding assessment
+        const assessment = calculateGoalAssessment(
+            goal,
+            riskData.risk_flags || []
+        );
+
+        // 7. Return assessment with actual portfolio context
+        return res.json({
+            assessment,
+
+            portfolio_context: {
+                verified_total_value: portfolio.verifiedTotalValue,
+                is_partial: portfolio.isPartial,
+                verified_holding_count: portfolio.verifiedHoldingCount,
+                unverified_holding_count: portfolio.unverifiedHoldingCount,
+                report_date: portfolio.reportDate,
+                asset_allocation: riskData.asset_allocation,
+                equity_percentage: riskData.equity_percentage,
+                concentration: riskData.concentration,
+                liquidity: riskData.liquidity,
+                risk_flags: riskData.risk_flags
+            },
+
+            data_note: "Portfolio risk uses verified consolidated holdings. Goal-specific allocated amount is currently user-entered."
+        });
+
+    } catch (error) {
+        console.error(
+            "Goal assessment error:",
+            error.response?.data || error.message
+        );
+
+        return res.status(500).json({
+            error: "Unable to generate goal-based portfolio assessment."
+        });
+    }
+});
 
 // --------------------------------------------------
 // START SERVER
