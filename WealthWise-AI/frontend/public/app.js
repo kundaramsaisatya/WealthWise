@@ -54,6 +54,61 @@ document.addEventListener("DOMContentLoaded", () => {
         return data;
     }
 
+    async function loadPortfolioPerformance() {
+    const message = document.getElementById("performance-message");
+    const canvas = document.getElementById("performanceChart");
+
+    if (!message || !canvas) return;
+
+    try {
+        const data = await apiRequest("/performance");
+        const performance = data.performance;
+
+        if (
+            !performance ||
+            !Array.isArray(performance.snapshots) ||
+            performance.snapshots.length < 2
+        ) {
+            message.textContent =
+                "At least two valid historical statements are required.";
+            canvas.style.display = "none";
+            return;
+        }
+
+        message.textContent = "";
+
+        new Chart(canvas, {
+            type: "line",
+            data: {
+                labels: performance.snapshots.map(item =>
+                    item.report_date
+                ),
+                datasets: [{
+                    label: "Portfolio Value (₹)",
+                    data: performance.snapshots.map(item =>
+                        Number(item.total_value)
+                    ),
+                    tension: 0.3,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false
+                    }
+                }
+            }
+        });
+
+    } catch (error) {
+        message.textContent = error.message;
+        canvas.style.display = "none";
+    }
+}
+
 
     function createElement(tag, className, text) {
 
@@ -632,7 +687,7 @@ document.addEventListener("DOMContentLoaded", () => {
             );
 
             await loadDocuments();
-
+            loadPortfolioPerformance();
             window.location.reload();
 
         } catch (error) {
