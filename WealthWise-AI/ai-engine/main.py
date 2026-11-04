@@ -979,6 +979,40 @@ def risk_analysis(request: PortfolioRequest):
         raise HTTPException(status_code=500, detail=str(error))
 
 
+@app.post(
+    "/risk/goal",
+    dependencies=[Depends(verify_service_secret)],
+)
+def goal_risk_analysis(request: PortfolioRequest):
+    try:
+        validate_client_id(request.client_id)
+
+        # Unlike /risk, use the holdings supplied by Node.js.
+        # Do not replace them with the client's complete saved portfolio.
+        portfolio = request.model_dump()
+
+        if not portfolio.get("holdings"):
+            raise HTTPException(
+                status_code=400,
+                detail="No allocated goal holdings supplied.",
+            )
+
+        return analyze_portfolio_risk(
+            portfolio,
+            history_records=build_history_records(request.client_id),
+            profile=request.profile,
+        )
+
+    except HTTPException:
+        raise
+
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+    except Exception as error:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(error))
+
 # --------------------------------------------------
 # AI RISK EXPLANATION
 # --------------------------------------------------
