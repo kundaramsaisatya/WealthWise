@@ -491,6 +491,57 @@ app.get("/register", (req, res) => {
 });
 
 // --------------------------------------------------
+// PROFILE SETTINGS
+// --------------------------------------------------
+
+app.get("/profile", requireAuth, async (req, res) => {
+    try {
+        const user = await User.findById(req.session.user.id).lean();
+
+        if (!user) {
+            return res.status(404).send("User not found.");
+        }
+
+        res.render("profile", {
+            riskTolerance: user.riskTolerance || "",
+            success: req.query.updated === "true"
+        });
+
+    } catch (error) {
+        console.error("Profile loading error:", error);
+        res.status(500).send("Unable to load profile settings.");
+    }
+});
+
+app.post("/profile/risk-tolerance", requireAuth, async (req, res) => {
+    try {
+        const allowedValues = [
+            "conservative",
+            "moderate",
+            "aggressive"
+        ];
+
+        const { riskTolerance } = req.body;
+
+        if (!allowedValues.includes(riskTolerance)) {
+            return res.status(400).send("Invalid risk tolerance.");
+        }
+
+        await User.findByIdAndUpdate(
+            req.session.user.id,
+            { riskTolerance },
+            { runValidators: true }
+        );
+
+        res.redirect("/profile?updated=true");
+
+    } catch (error) {
+        console.error("Risk tolerance update error:", error);
+        res.status(500).send("Unable to update risk tolerance.");
+    }
+});
+
+// --------------------------------------------------
 // DASHBOARD
 // --------------------------------------------------
 
