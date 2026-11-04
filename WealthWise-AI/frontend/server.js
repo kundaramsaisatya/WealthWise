@@ -2219,6 +2219,14 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
     }
 });
 
+app.get("/financial-goals", requireAuth, (req, res) => {
+    res.render("financial-goals");
+});
+app.get("/financial-goals/:id/assessment", requireAuth, (req, res) => {
+    res.render("goal-assessment", {
+        goalId: req.params.id
+    });
+});
 
 // --------------------------------------------------
 // START SERVER

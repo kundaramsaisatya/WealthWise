@@ -118,6 +118,10 @@ function renderGoals(){
     <button type="button" class="allocate-btn" onclick="openAllocation('${goal._id}')">Allocate Holdings</button>
     <button type="button" class="edit-btn" onclick="editGoal('${goal._id}')">Edit</button>
     <button type="button" class="delete-btn" onclick="deleteGoal('${goal._id}')">Delete</button>
+    <button type="button" class="primary-btn"
+    onclick="window.location.href='/financial-goals/${goal._id}/assessment'">
+    View Assessment
+    </button>
    </div></div>`;
  }).join("");
 }

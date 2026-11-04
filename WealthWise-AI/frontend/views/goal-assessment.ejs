@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Goal Assessment | WealthWise AI</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+.assessment-wrap{max-width:1150px;margin:auto;padding:30px;color:#172b45}
+.page-head{margin:24px 0}.page-head h1{margin:8px 0}.muted{color:#64748b}
+.panel,.metric-card,.finding,.risk-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:20px}
+.panel{margin:18px 0}.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:18px 0}
+.metric-card span{display:block;color:#64748b;font-size:12px}.metric-card strong{display:block;font-size:22px;margin-top:9px;overflow-wrap:anywhere}
+.status{display:inline-block;padding:7px 11px;border-radius:20px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700}
+.status.good{background:#dcfce7;color:#166534}.status.bad{background:#fee2e2;color:#991b1b}
+.progress-track{height:12px;background:#e5e7eb;border-radius:20px;overflow:hidden;margin:12px 0}
+.progress-fill{height:100%;background:#07845f;width:0}
+.section-title{margin:0 0 15px}.two-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.data-row{display:flex;justify-content:space-between;gap:15px;padding:11px 0;border-bottom:1px solid #edf0f3;font-size:13px}.data-row:last-child{border-bottom:0}.data-row span{color:#64748b}.data-row strong{text-align:right}
+.finding-list,.risk-list{display:grid;gap:10px}.finding{padding:14px}.finding strong{display:block;margin-bottom:5px}.severity{font-size:11px;font-weight:700;text-transform:uppercase;color:#b91c1c}
+.severity.Medium{color:#b45309}.severity.Low{color:#07845f}
+.bar-row{margin:13px 0}.bar-label{display:flex;justify-content:space-between;font-size:13px;gap:10px}.bar-track{height:8px;background:#e5e7eb;border-radius:20px;margin-top:7px;overflow:hidden}.bar-fill{height:100%;background:#07845f}
+.note{font-size:12px;line-height:1.6;color:#64748b}.error-box{background:#fff1f2;border:1px solid #fecdd3;color:#9f1239;padding:16px;border-radius:12px}
+.loading{padding:30px;text-align:center;color:#64748b}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+@media(max-width:700px){.assessment-wrap{padding:16px}.two-col{grid-template-columns:1fr}.metric-card strong{font-size:19px}.panel{padding:16px}}
+</style>
+</head>
+<body>
+<main class="assessment-wrap">
+<a href="/financial-goals" class="secondary-btn">← Back to Financial Goals</a>
+<header class="page-head">
+ <span class="eyebrow">FINANCIAL PLANNING</span>
+ <h1 id="goal-title">Goal Assessment</h1>
+ <p class="muted">A goal-specific view of projected funding and allocated portfolio risk.</p>
+ <div id="status-wrap"></div>
+</header>
+<div id="assessment-root" class="loading">Generating your goal assessment...</div>
+<p class="note">Illustrative projections only. Investment returns are not guaranteed. This assessment is not investment advice.</p>
+</main>
+<script>
+const goalId = <%- JSON.stringify(goalId) %>;
+const root = document.getElementById("assessment-root");
+
+function money(value) {
+ const n = Number(value);
+ return Number.isFinite(n) ? "₹" + n.toLocaleString("en-IN",{maximumFractionDigits:2}) : "N/A";
+}
+function safe(value) {
+ return String(value ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function row(label,value) {
+ return `<div class="data-row"><span>${safe(label)}</span><strong>${safe(value)}</strong></div>`;
+}
+function renderFindings(items) {
+ if(!items || !items.length) return '<p class="muted">No findings were returned.</p>';
+ return `<div class="finding-list">${items.map(item=>`
+  <div class="finding"><span class="severity ${safe(item.severity)}">${safe(item.severity)} · ${safe(item.type)}</span>
+  <strong>${safe(item.message)}</strong></div>`).join("")}</div>`;
+}
+function renderFlags(flags) {
+ if(!flags || !flags.length) return '<p class="muted">No portfolio risk flags were returned for the allocated holdings.</p>';
+ return `<div class="risk-list">${flags.map(flag=>`
+  <div class="finding"><span class="severity ${safe(flag.severity)}">${safe(flag.severity)} · ${safe(flag.type)}</span>
+  <strong>${safe(flag.message)}</strong></div>`).join("")}</div>`;
+}
+function renderAllocation(items) {
+ if(!items || !items.length) return '<p class="muted">Asset allocation details are unavailable.</p>';
+ const total = items.reduce((sum,item)=>sum+(Number(item.value)||0),0);
+ return items.map(item=>{
+  const value=Number(item.value)||0;
+  const pct=Number(item.percentage ?? (total ? value/total*100 : 0));
+  return `<div class="bar-row"><div class="bar-label"><span>${safe(item.asset_class || item.name || "Other")}</span><strong>${money(value)} · ${pct.toFixed(1)}%</strong></div><div class="bar-track"><div class="bar-fill" style="width:${Math.max(0,Math.min(100,pct))}%"></div></div></div>`;
+ }).join("");
+}
+async function loadAssessment(){
+ try{
+  const response=await fetch(`/goals/${encodeURIComponent(goalId)}/assessment`);
+  const data=await response.json();
+  if(!response.ok) throw new Error(data.error || "Unable to generate this assessment.");
+  const a=data.assessment || {}, p=data.portfolio_context || {};
+  document.getElementById("goal-title").textContent=`${a.goal_name || "Goal"} — Assessment`;
+  const statusClass = a.status==="Projected on track" ? "good" : "bad";
+  document.getElementById("status-wrap").innerHTML=`<span class="status ${statusClass}">${safe(a.status || "Assessment ready")}</span>`;
+  const progress=Math.max(0,Math.min(100,Number(a.projected_funding_percentage)||0));
+  const concentration=p.concentration || {};
+  const liquidity=p.liquidity || {};
+  root.className="";
+  root.innerHTML=`
+   <section class="metric-grid">
+    <div class="metric-card"><span>Future target after inflation</span><strong>${money(a.future_target)}</strong></div>
+    <div class="metric-card"><span>Projected total at target date</span><strong>${money(a.projected_total)}</strong></div>
+    <div class="metric-card"><span>Projected funding gap</span><strong>${money(a.funding_gap)}</strong></div>
+    <div class="metric-card"><span>Required monthly investment</span><strong>${money(a.required_monthly_investment)}</strong></div>
+   </section>
+   <section class="panel">
+    <h2 class="section-title">Funding progress</h2>
+    <div class="bar-label"><span>Projected funding</span><strong>${progress.toFixed(2)}%</strong></div>
+    <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+    ${row("Current savings",money(a.current_savings))}
+    ${row("Portfolio holdings allocated",money(a.portfolio_allocated_amount))}
+    ${row("Starting capital",money(a.starting_capital))}
+    ${row("Projected growth of existing funds",money(a.projected_existing_funds))}
+    ${row("Planned monthly contribution",money(a.planned_monthly_contribution))}
+    ${row("Projected future contributions",money(a.projected_contributions))}
+    ${row("Additional monthly amount needed",money(a.additional_monthly_requirement))}
+    ${row("Time remaining",`${a.months_remaining ?? "N/A"} months`)}
+   </section>
+   <section class="panel">
+    <h2 class="section-title">Assessment findings</h2>
+    ${renderFindings(a.findings)}
+   </section>
+   <div class="two-col">
+    <section class="panel">
+     <h2 class="section-title">Allocated portfolio overview</h2>
+     ${row("Value allocated to this goal",money(p.goal_allocated_value))}
+     ${row("Holdings analysed",p.goal_holding_count ?? "N/A")}
+     ${row("Total verified portfolio value",money(p.verified_total_value))}
+     ${row("Verified holdings in portfolio",p.verified_holding_count ?? "N/A")}
+     ${row("Unverified holdings excluded",p.unverified_holding_count ?? "N/A")}
+     ${row("Portfolio report date",p.report_date ? new Date(p.report_date).toLocaleDateString("en-IN") : "Not available")}
+     ${p.is_partial ? '<p class="note">The source portfolio is marked as partial.</p>' : ""}
+    </section>
+    <section class="panel">
+     <h2 class="section-title">Risk indicators</h2>
+     ${row("Equity exposure",`${Number(p.equity_percentage||0).toFixed(1)}%`)}
+     ${row("Concentration HHI",concentration.hhi ?? "N/A")}
+     ${row("Top-three concentration",concentration.top_three_concentration != null ? `${Number(concentration.top_three_concentration).toFixed(1)}%` : "N/A")}
+     ${row("Liquidity value",money(liquidity.value))}
+     ${row("Liquidity percentage",liquidity.percentage != null ? `${Number(liquidity.percentage).toFixed(1)}%` : "N/A")}
+    </section>
+   </div>
+   <section class="panel">
+    <h2 class="section-title">Asset allocation for this goal</h2>
+    ${renderAllocation(p.asset_allocation)}
+    <p class="note">These allocation and concentration metrics describe only the holdings assigned to this goal, not your entire portfolio.</p>
+   </section>
+   <section class="panel">
+    <h2 class="section-title">Portfolio risk flags</h2>
+    ${renderFlags(p.risk_flags)}
+   </section>
+   <section class="panel">
+    <h2 class="section-title">Assumptions and limitations</h2>
+    ${row("Inflation assumption",`${a.assumptions?.inflation_rate ?? "N/A"}% per year`)}
+    ${row("Expected annual return",`${a.assumptions?.expected_annual_return ?? "N/A"}%`)}
+    ${row("Compounding",a.assumptions?.compounding || "N/A")}
+    ${row("Contribution timing",a.assumptions?.contribution_timing || "N/A")}
+    <p class="note">${safe(data.data_note || "")}</p>
+    <ul class="note">${(a.limitations||[]).map(x=>`<li>${safe(x)}</li>`).join("")}</ul>
+   </section>`;
+ }catch(error){
+  root.className="";
+  root.innerHTML=`<div class="error-box"><strong>Assessment unavailable</strong><p>${safe(error.message)}</p><p>Make sure this goal has at least one saved holding allocation, then try again.</p></div><div class="actions"><button class="primary-btn" onclick="loadAssessment()">Try Again</button><a class="secondary-btn" href="/financial-goals">Back to Goals</a></div>`;
+ }
+}
+loadAssessment();
+</script>
+</body>
+</html>
