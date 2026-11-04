@@ -387,16 +387,18 @@ def calculate_portfolio_metrics(portfolio, thresholds=None):
 
     if largest_holding["weight_percentage"] > limits["max_single_holding_pct"]:
         risk_flags.append({
-            "type": "Concentration",
-            "severity": "High",
-            "message": (
-                f"{largest_holding['name']} represents "
-                f"{largest_holding['weight_percentage']}% "
-                "of the portfolio, above the configured limit of "
-                f"{limits['max_single_holding_pct']}%."
-            )
-        })
-
+        "type": "Concentration",
+        "severity": "High",
+        "holding_name": largest_holding["name"],
+        "holding_percentage": largest_holding["weight_percentage"],
+        "configured_limit": limits["max_single_holding_pct"],
+        "message": (
+            f"{largest_holding['name']} represents "
+            f"{largest_holding['weight_percentage']}% "
+            "of the portfolio, above the configured limit of "
+            f"{limits['max_single_holding_pct']}%."
+        )
+    })
     if top_three_concentration > limits["max_top_three_pct"]:
         risk_flags.append({
             "type": "Concentration",
