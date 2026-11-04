@@ -86,7 +86,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 datasets: [{
                     label: "Portfolio Value (₹)",
                     data: performance.history.map(item =>
-                        Number(item.total_value)
+                        Number(item.portfolio_value)
                     ),
                     tension: 0.3,
                     fill: false
@@ -687,7 +687,6 @@ document.addEventListener("DOMContentLoaded", () => {
             );
 
             await loadDocuments();
-            loadPortfolioPerformance();
             window.location.reload();
 
         } catch (error) {
@@ -768,6 +767,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // =========================================
 
     loadDocuments();
+    loadPortfolioPerformance();
 
 });
 function initializePortfolioCharts() {
