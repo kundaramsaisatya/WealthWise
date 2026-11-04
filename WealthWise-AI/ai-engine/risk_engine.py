@@ -143,6 +143,36 @@ def analyze_portfolio_risk(
     )
 
     risk_flags = list(portfolio.get("risk_flags", []))
+        # Goal-horizon equity risk assessment
+    if profile_used and profile_used.get("horizon_years") is not None:
+
+        try:
+            horizon_years = float(profile_used["horizon_years"])
+        except (TypeError, ValueError):
+            horizon_years = None
+
+        if horizon_years is not None and horizon_years >= 0:
+
+            for rule in GOAL_HORIZON_EQUITY_LIMITS:
+
+                if horizon_years <= rule["max_horizon_years"]:
+
+                    equity_pct = portfolio.get("equity_percentage", 0)
+
+                    if equity_pct > rule["max_equity_pct"]:
+                        risk_flags.append({
+                            "type": "Goal Horizon Risk",
+                            "severity": rule["severity"],
+                            "message": (
+                                f"Equity exposure is {equity_pct}% "
+                                f"for a goal with {horizon_years:.2f} "
+                                f"years remaining. This exceeds the "
+                                f"illustrative {rule['max_equity_pct']}% "
+                                f"equity limit for this time horizon."
+                            )
+                        })
+
+                    break
 
     # Add data-quality warnings without duplicating the ones
     # already reported by portfolio analytics.
