@@ -139,6 +139,13 @@ const portfolioSchema = new mongoose.Schema({
         default: 0
     },
 
+    // Provenance of the portfolio-level valuation used for history.
+    totalValueSource: {
+        type: String,
+        enum: ["reported", "holdings", "incomplete"],
+        default: "incomplete"
+    },
+
     // Actual statement/report date.
     // Never automatically substitute upload date.
 
