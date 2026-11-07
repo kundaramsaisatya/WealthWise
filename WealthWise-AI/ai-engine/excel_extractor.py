@@ -821,6 +821,51 @@ def extract_sheet(workbook, sheet_name):
 
 
 # --------------------------------------------------
+# WORKBOOK ACCOUNT HOLDER METADATA
+# --------------------------------------------------
+
+def extract_workbook_account_holder(workbook):
+    """
+    Read an explicitly labelled account-holder field from statement
+    metadata sheets. Never infer a person from an investment row.
+    """
+    labels = {
+        "account holder",
+        "account holders name",
+        "investor name",
+        "name of investor",
+        "primary holder",
+        "first holder",
+    }
+    candidates = set()
+
+    for sheet_name in workbook.sheet_names:
+        try:
+            metadata = pd.read_excel(
+                workbook,
+                sheet_name=sheet_name,
+                header=None,
+                nrows=30,
+                dtype=object,
+            )
+        except Exception:
+            continue
+
+        for _, row in metadata.iterrows():
+            values = row.tolist()
+            for index, value in enumerate(values):
+                label = normalize_column(value) if pd.notna(value) else ""
+                if label not in labels or index + 1 >= len(values):
+                    continue
+                holder = clean_text(values[index + 1])
+                if holder:
+                    candidates.add(holder)
+
+    # Conflicting names across metadata sheets are not guessed.
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
+# --------------------------------------------------
 # MAIN EXCEL EXTRACTION FUNCTION
 # --------------------------------------------------
 
@@ -830,6 +875,8 @@ def extract_excel(file_path):
     report_dates = []
 
     with pd.ExcelFile(file_path) as workbook:
+
+        account_holder = extract_workbook_account_holder(workbook)
 
         for sheet_name in workbook.sheet_names:
 
@@ -866,5 +913,6 @@ def extract_excel(file_path):
 
     return {
         "report_date": report_date,
+        "account_holder": account_holder,
         "sheets": extracted_data
     }
