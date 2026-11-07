@@ -103,24 +103,61 @@ document.addEventListener("DOMContentLoaded", () => {
         new Chart(canvas, {
             type: "line",
             data: {
-                labels: performance.history.map(item =>
-                    item.report_date
-                ),
+                labels: performance.history.map(item => {
+                    const date = new Date(`${item.report_date}T00:00:00`);
+                    return Number.isNaN(date.getTime())
+                        ? item.report_date
+                        : date.toLocaleDateString("en-IN", {
+                            month: "short",
+                            year: "numeric"
+                        });
+                }),
                 datasets: [{
-                    label: "Portfolio Value (₹)",
+                    label: "Portfolio Value",
                     data: performance.history.map(item =>
                         Number(item.portfolio_value)
                     ),
-                    tension: 0.3,
+                    tension: 0.28,
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
                     fill: false
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: "index"
+                },
+                plugins: {
+                    legend: {
+                        position: "top",
+                        labels: { usePointStyle: true, boxWidth: 10 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: context => "Portfolio Value: " +
+                                new Intl.NumberFormat("en-IN", {
+                                    style: "currency",
+                                    currency: "INR",
+                                    maximumFractionDigits: 0
+                                }).format(context.parsed.y)
+                        }
+                    }
+                },
                 scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { maxRotation: 0 }
+                    },
                     y: {
-                        beginAtZero: false
+                        beginAtZero: false,
+                        ticks: {
+                            callback: value => "₹" +
+                                Number(value).toLocaleString("en-IN")
+                        }
                     }
                 }
             }
