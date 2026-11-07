@@ -9,7 +9,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node frontend/server.js",
-    "dev": "nodemon frontend/server.js"
+    "dev": "nodemon frontend/server.js",
+    "test:account-holder": "python -m unittest discover -s ai-engine -p test_account_holder.py"
   },
   "keywords": [],
   "author": "",
