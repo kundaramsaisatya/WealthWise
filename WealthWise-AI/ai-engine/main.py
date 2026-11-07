@@ -290,8 +290,9 @@ def consolidate_holdings(holdings: list, documents: list):
 
 def load_latest_portfolio(client_id: str, document_type: str | None = None):
     """
-    Return the newest snapshot, optionally restricted to one document type.
-    This prevents a PDF-specific question from silently using Excel records.
+    Return the newest valuation snapshot for the most recently identified
+    account holder. This prevents unrelated people’s statements from being
+    combined in analytics, risk, or document-grounded portfolio answers.
     """
     holdings, documents = load_all_portfolio_holdings(client_id)
 
@@ -299,6 +300,31 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
         documents = [
             d for d in documents
             if (d.get("document_type") or "").lower() == document_type.lower()
+        ]
+
+    if not documents:
+        return [], [], {}
+
+    identified_documents = [
+        d for d in documents
+        if isinstance(d.get("account_holder"), str)
+        and d["account_holder"].strip()
+    ]
+
+    active_account_holder = None
+    if identified_documents:
+        latest_identity_document = max(
+            identified_documents,
+            key=lambda d: (d.get("report_date") or "", d.get("saved_at") or ""),
+        )
+        active_account_holder = " ".join(
+            latest_identity_document["account_holder"].strip().casefold().split()
+        )
+        documents = [
+            d for d in documents
+            if " ".join(
+                str(d.get("account_holder") or "").strip().casefold().split()
+            ) == active_account_holder
         ]
 
     if not documents:
@@ -320,6 +346,13 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
 
     consolidated, info = consolidate_holdings(selected_holdings, selected)
     info["report_date"] = latest_date or None
+    info["account_holder"] = (
+        selected[0].get("account_holder") if selected else active_account_holder
+    )
+    info["excluded_account_document_count"] = (
+        len(identified_documents) - len(documents)
+        if active_account_holder else 0
+    )
 
     return consolidated, selected, info
 
