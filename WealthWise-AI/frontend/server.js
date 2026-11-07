@@ -127,6 +127,51 @@ function getSnapshotDate(snapshot) {
 }
 
 
+function selectAccountHolderSnapshots(snapshots) {
+    const identified = snapshots.filter(snapshot =>
+        typeof snapshot.accountHolder === "string" &&
+        snapshot.accountHolder.trim()
+    );
+
+    if (identified.length === 0) {
+        return {
+            snapshots,
+            activeAccountHolder: null,
+            excludedDocuments: []
+        };
+    }
+
+    const latestIdentified = [...identified].sort((a, b) =>
+        getSnapshotDate(b) - getSnapshotDate(a) ||
+        new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+    )[0];
+
+    const activeAccountHolder = latestIdentified.accountHolder.trim();
+    const activeKey = normalizeName(activeAccountHolder);
+
+    const selected = snapshots.filter(snapshot =>
+        normalizeName(snapshot.accountHolder) === activeKey
+    );
+
+    const excludedDocuments = snapshots
+        .filter(snapshot => normalizeName(snapshot.accountHolder) !== activeKey)
+        .map(snapshot => ({
+            documentName: snapshot.documentName || "Unknown document",
+            accountHolder: snapshot.accountHolder || null,
+            reportDate: snapshot.reportDate || null,
+            reason: snapshot.accountHolder
+                ? "Different account holder."
+                : "Account holder could not be verified."
+        }));
+
+    return {
+        snapshots: selected,
+        activeAccountHolder,
+        excludedDocuments
+    };
+}
+
+
 function getHoldingKey(holding, snapshot) {
 
     const isin = normalizeIdentifier(holding.isin);
@@ -550,11 +595,14 @@ app.get("/", requireAuth, async (req, res) => {
     try {
         const clientId = req.session.user.clientId;
 
-        const allPortfolios = await Portfolio.find({ clientId })
+        const allPortfolioRecords = await Portfolio.find({ clientId })
             .sort({ reportDate: -1, createdAt: -1 })
             .lean();
 
-        const allDocumentHoldings = allPortfolios.flatMap(snapshot =>
+        const accountSelection = selectAccountHolderSnapshots(allPortfolioRecords);
+        const allPortfolios = accountSelection.snapshots;
+
+        const allDocumentHoldings = allPortfolioRecords.flatMap(snapshot =>
             (snapshot.holdings || []).map(holding => ({
                 ...holding,
                 documentName: snapshot.documentName || "Unknown document",
@@ -566,6 +614,8 @@ app.get("/", requireAuth, async (req, res) => {
 
         const consolidated = consolidatePortfolios(allPortfolios);
         const portfolio = consolidated.portfolio;
+        portfolio.accountHolder = accountSelection.activeAccountHolder;
+        portfolio.excludedAccountDocuments = accountSelection.excludedDocuments;
 
         if (portfolio.holdings.length === 0) {
 
@@ -576,6 +626,7 @@ app.get("/", requireAuth, async (req, res) => {
                 allDocumentHoldings,
                 duplicateRecords: [],
                 conflicts: [],
+                accountSelection,
                 error: "No actual investment holdings found."
             });
         }
@@ -594,6 +645,7 @@ app.get("/", requireAuth, async (req, res) => {
                 allDocumentHoldings,
                 duplicateRecords: consolidated.duplicateRecords,
                 conflicts: consolidated.conflicts,
+                accountSelection,
                 error: "No holdings have verified current market values."
             });
         }
@@ -623,6 +675,7 @@ app.get("/", requireAuth, async (req, res) => {
             allDocumentHoldings,
             duplicateRecords: consolidated.duplicateRecords,
             conflicts: consolidated.conflicts,
+            accountSelection,
             error: null
         });
 
@@ -656,9 +709,11 @@ app.get("/performance", requireAuth, async (req, res) => {
         const clientId = req.session.user.clientId;
 
         // Fetch only this client's historical portfolio records.
-        const portfolios = await Portfolio.find({ clientId })
+        const allPortfolioRecords = await Portfolio.find({ clientId })
             .sort({ reportDate: 1, createdAt: 1 })
             .lean();
+        const accountSelection = selectAccountHolderSnapshots(allPortfolioRecords);
+        const portfolios = accountSelection.snapshots;
             
         console.log("\n========== PERFORMANCE DEBUG ==========");
         console.log("Client ID:", clientId);
@@ -891,6 +946,7 @@ app.post(
                 let holdings = [];
                 let currency = "INR";
                 let reportDate = null;
+                let accountHolder = null;
                 let reportedTotalValue = null;
 
                 // PDF PROCESSING
@@ -928,6 +984,7 @@ app.post(
                     }));
 
                     currency = extracted.currency || "INR";
+                    accountHolder = extracted.account_holder || null;
 
                     if (
                         extracted.report_date &&
@@ -974,6 +1031,7 @@ app.post(
                 else if (extension === ".xlsx") {
 
                     const sheets = response.data.sheets;
+                    accountHolder = response.data.account_holder || null;
                     console.log("EXCEL API RESPONSE:");
                     console.dir(response.data, { depth: 6 });
 
@@ -1141,6 +1199,7 @@ app.post(
                     currency,
                     totalValue: Number(snapshotTotal.toFixed(2)),
                     totalValueSource,
+                    accountHolder,
                     reportDate,
                     holdings
                 });
