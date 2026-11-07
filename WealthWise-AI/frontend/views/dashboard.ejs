@@ -17,6 +17,21 @@
     const safeConflicts =
         Array.isArray(conflicts) ? conflicts : [];
 
+    const folioVerificationRecords = Array.from(
+        new Map(
+            safeAllDocumentHoldings
+                .filter(item => item.folioVerification?.folio_number)
+                .map(item => [String(item.folioVerification.folio_number).replace(/\\s+/g, "").toUpperCase(), item.folioVerification])
+        ).values()
+    );
+    const folioVerificationIssues = folioVerificationRecords.filter(item => {
+        const kyc = String(item.kyc_status || "").toLowerCase();
+        const nominee = String(item.nominee_status || "").toLowerCase();
+        return item.verification_note ||
+            (kyc && !/^(kyc )?ok$|^verified$|^complete$/.test(kyc)) ||
+            (nominee && !/^(registered|not applicable|n a)$/.test(nominee));
+    });
+
     // The dashboard can also render on fallback/error paths where the
     // server has not supplied accountSelection.
     const safeAccountSelection =
@@ -1000,6 +1015,15 @@
 
                 <div class="metric-card">
                     <div class="metric-top">
+                        <span>Folio Verification Issues</span>
+                        <span class="metric-icon">!</span>
+                    </div>
+                    <h2><%= folioVerificationIssues.length %></h2>
+                    <small>Explicit KYC / nominee exceptions</small>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-top">
                         <span>Source Documents</span>
                         <span class="metric-icon">▧</span>
                     </div>
@@ -1116,6 +1140,65 @@
 
                 <% } %>
 
+            </div>
+
+
+            <!-- FOLIO VERIFICATION -->
+            <div class="content-card">
+                <div class="card-heading">
+                    <div>
+                        <h3>Folio Verification</h3>
+                        <p>Nominee and KYC details explicitly reported in uploaded statement schedules. This is an administrative check, not a valuation difference.</p>
+                    </div>
+                </div>
+
+                <% if (folioVerificationRecords.length > 0) { %>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Folio</th>
+                                    <th>AMC</th>
+                                    <th>Nominee Status</th>
+                                    <th>KYC / PAN Status</th>
+                                    <th>Verification</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% folioVerificationRecords.forEach(item => {
+                                    const kyc = String(item.kyc_status || "").toLowerCase();
+                                    const nominee = String(item.nominee_status || "").toLowerCase();
+                                    const issue = Boolean(item.verification_note) ||
+                                        (kyc && !/^(kyc )?ok$|^verified$|^complete$/.test(kyc)) ||
+                                        (nominee && !/^(registered|not applicable|n a)$/.test(nominee));
+                                %>
+                                    <tr>
+                                        <td><%= item.folio_number %></td>
+                                        <td><%= item.amc || "N/A" %></td>
+                                        <td><%= item.nominee_status || "Not reported" %></td>
+                                        <td><%= item.kyc_status || "Not reported" %></td>
+                                        <td>
+                                            <span class="<%= issue ? 'warning-tag' : 'category-tag' %>">
+                                                <%= item.verification_note ? "Manual review" : issue ? "Action required" : "No issue reported" %>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                <% }) %>
+                            </tbody>
+                        </table>
+                    </div>
+                    <% if (folioVerificationIssues.length > 0) { %>
+                        <div class="notice notice-info">
+                            <strong><%= folioVerificationIssues.length %> folio(s) need administrative follow-up.</strong>
+                            Review the original AMC statement before taking action. WealthWise does not change or submit KYC / nominee details.
+                        </div>
+                    <% } %>
+                <% } else { %>
+                    <div class="empty-state">
+                        <span>✓</span>
+                        <p>No folio-level KYC or nominee metadata was provided by the uploaded documents. Status is unknown, not verified.</p>
+                    </div>
+                <% } %>
             </div>
 
 
