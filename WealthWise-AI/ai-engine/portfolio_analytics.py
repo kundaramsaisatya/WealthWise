@@ -98,9 +98,11 @@ def normalize_asset_class(asset_class):
         "cash and equivalents": "Cash / Liquid",
         "real estate": "Real Estate",
         "reit": "Real Estate",
+        "unclassified": "Unclassified",
+        "other": "Unclassified",
     }
 
-    return aliases.get(value, "Other")
+    return aliases.get(value, "Unclassified")
 
 
 def calculate_hhi(weights):
@@ -210,12 +212,9 @@ def calculate_portfolio_metrics(portfolio, thresholds=None):
 
         asset_class = normalize_asset_class(asset_class_raw)
 
-        # The Excel extractor provides "sub_category", not "sector".
-        sector = str(
-            holding.get("sector")
-            or holding.get("sub_category")
-            or "Unknown"
-        ).strip()
+        # Sub-category (for example Large Cap or Small Cap) is not a
+        # business sector. Only explicit sector metadata may populate sector.
+        sector = str(holding.get("sector") or "Unknown").strip()
 
         validated_holdings.append({
             **holding,
