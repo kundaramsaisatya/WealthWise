@@ -403,11 +403,13 @@ EXTRACTION RULES:
     or year-to-date deposits as portfolio value.
 20. If the current total portfolio value is not identifiable, use null.
 21. Use YYYY-MM-DD for report_date.
-22. Asset class must be one of:
+22. Extract account_holder only when an explicit account holder, investor name,
+    or account name is printed. Preserve the name exactly; otherwise use null.
+23. Asset class must be one of:
     Equity, Debt, Hybrid, Liquid, Gold, Real Estate, Cash, Unclassified.
-23. If asset class cannot be confidently determined, use null.
-24. If no holdings appear on a page, return an empty holdings array.
-25. Return no explanatory text outside JSON.
+24. If asset class cannot be confidently determined, use null.
+25. If no holdings appear on a page, return an empty holdings array.
+26. Return no explanatory text outside JSON.
 
 DOCUMENT:
 
