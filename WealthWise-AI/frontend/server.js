@@ -699,6 +699,16 @@ app.get("/", requireAuth, async (req, res) => {
             portfolio
         );
 
+        // Apply the user's saved risk tolerance to the dashboard assessment.
+        const riskProfileUser = await User.findById(req.session.user.id)
+            .select("riskTolerance")
+            .lean();
+        if (riskProfileUser?.riskTolerance) {
+            portfolioPayload.profile = {
+                risk_tolerance: riskProfileUser.riskTolerance
+            };
+        }
+
         if (portfolioPayload.holdings.length === 0) {
 
             return res.render("dashboard", {
@@ -1516,6 +1526,15 @@ app.post("/risk/explanation", requireAuth, async (req, res) => {
             clientId,
             consolidated.portfolio
         );
+
+        const riskProfileUser = await User.findById(req.session.user.id)
+            .select("riskTolerance")
+            .lean();
+        if (riskProfileUser?.riskTolerance) {
+            portfolioPayload.profile = {
+                risk_tolerance: riskProfileUser.riskTolerance
+            };
+        }
 
         if (portfolioPayload.holdings.length === 0) {
             return res.status(409).json({
