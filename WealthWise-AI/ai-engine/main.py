@@ -305,6 +305,7 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
     if not documents:
         return [], [], {}
 
+    all_documents_before_account_filter = list(documents)
     identified_documents = [
         d for d in documents
         if isinstance(d.get("account_holder"), str)
@@ -350,7 +351,7 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
         selected[0].get("account_holder") if selected else active_account_holder
     )
     info["excluded_account_document_count"] = (
-        len(identified_documents) - len(documents)
+        len(all_documents_before_account_filter) - len(documents)
         if active_account_holder else 0
     )
 
@@ -358,8 +359,34 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
 
 
 def build_history_records(client_id: str):
-    """One record per holding per saved report, for history coverage checks."""
-    holdings, _ = load_all_portfolio_holdings(client_id)
+    """One record per holding per saved report for the active account only."""
+    holdings, documents = load_all_portfolio_holdings(client_id)
+
+    identified = [
+        document for document in documents
+        if isinstance(document.get("account_holder"), str)
+        and document["account_holder"].strip()
+    ]
+
+    if identified:
+        latest = max(
+            identified,
+            key=lambda d: (d.get("report_date") or "", d.get("saved_at") or ""),
+        )
+        active_holder = " ".join(
+            latest["account_holder"].strip().casefold().split()
+        )
+        active_document_ids = {
+            document.get("document_id")
+            for document in documents
+            if " ".join(
+                str(document.get("account_holder") or "").strip().casefold().split()
+            ) == active_holder
+        }
+        holdings = [
+            holding for holding in holdings
+            if holding.get("document_id") in active_document_ids
+        ]
 
     return [
         {
