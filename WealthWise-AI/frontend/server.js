@@ -134,10 +134,26 @@ function selectAccountHolderSnapshots(snapshots) {
     );
 
     if (identified.length === 0) {
+        // Without an explicitly identified owner, do not combine separate
+        // statements. Keep only the newest single snapshot as a provisional
+        // view; all other documents remain visible as excluded records.
+        const ordered = [...snapshots].sort((a, b) =>
+            getSnapshotDate(b) - getSnapshotDate(a) ||
+            new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+        );
+        const selected = ordered.length ? [ordered[0]] : [];
+        const excludedDocuments = ordered.slice(1).map(snapshot => ({
+            documentName: snapshot.documentName || "Unknown document",
+            accountHolder: null,
+            reportDate: snapshot.reportDate || null,
+            reason: "Not combined because account-holder identity could not be verified."
+        }));
+
         return {
-            snapshots,
+            snapshots: selected,
             activeAccountHolder: null,
-            excludedDocuments: []
+            excludedDocuments,
+            identityUnverified: snapshots.length > 0
         };
     }
 
@@ -770,31 +786,7 @@ app.get("/performance", requireAuth, async (req, res) => {
         const accountSelection = selectAccountHolderSnapshots(allPortfolioRecords);
         const portfolios = accountSelection.snapshots;
             
-        console.log("\n========== PERFORMANCE DEBUG ==========");
-        console.log("Client ID:", clientId);
-        console.log("Total portfolio records:", portfolios.length);
-
-        console.log(
-            "Demo records:",
-            portfolios.filter(isDemoDocument).length
-        );
-
-        console.log(
-            "Records without report date:",
-            portfolios.filter(p => !p.reportDate).length
-        );
-
-        console.log(
-            "Records with report date:",
-            portfolios.filter(p => p.reportDate).length
-        );
-
-        console.log(
-            "Report dates:",
-            portfolios.map(p => p.reportDate)
-        );
-
-        console.log("=======================================\n");
+        // Avoid logging account identifiers and statement-level financial metadata.
 
         // Exclude demo records and records without reliable report dates.
         const validRecords = portfolios.filter(snapshot => {
@@ -1177,16 +1169,7 @@ app.post(
                             .filter(item => item?.folio_number)
                             .map(item => [normalizeIdentifier(item.folio_number), item])
                     );
-                    console.log("EXCEL API RESPONSE:");
-                    console.dir(response.data, { depth: 6 });
-
-                    console.log("SHEET NAMES:", Object.keys(sheets || {}));
-
-                    for (const [name, sheet] of Object.entries(sheets || {})) {
-                        console.log("SHEET:", name);
-                        console.log("STATUS:", sheet?.status);
-                        console.log("HOLDINGS COUNT:", sheet?.holdings?.length);
-                    }
+                    // Do not log extracted personal or financial statement contents.
                     if (
                         response.data.report_date &&
                         !Number.isNaN(new Date(response.data.report_date).getTime())
