@@ -85,6 +85,16 @@ document.addEventListener("DOMContentLoaded", () => {
             message.appendChild(warning);
         }
 
+        if (Array.isArray(data.reconciliation_warnings) &&
+            data.reconciliation_warnings.length) {
+            const warning = createElement(
+                "p",
+                "performance-warning",
+                `${data.reconciliation_warnings.length} same-date holding reconciliation warning(s) were detected. Preferred statement sources were used; review the Reconciliation section.`
+            );
+            message.appendChild(warning);
+        }
+
         if (
             !performance ||
             !Array.isArray(performance.history) ||
