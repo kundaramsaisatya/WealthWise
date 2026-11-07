@@ -693,19 +693,23 @@ app.get("/", requireAuth, async (req, res) => {
             }
         );
 
-        const riskResponse = await axios.post(
-            `${AI_URL}/risk`,
-            portfolioPayload,
-            {
-                headers: getServiceHeaders(),
-                timeout: 30000
-            }
-        );
+        // A partial portfolio can support a verified subtotal, but it
+        // must not be presented as a complete risk assessment.
+        const riskResponse = portfolio.isPartial
+            ? null
+            : await axios.post(
+                `${AI_URL}/risk`,
+                portfolioPayload,
+                {
+                    headers: getServiceHeaders(),
+                    timeout: 30000
+                }
+            );
 
         res.render("dashboard", {
             portfolio,
             analytics: analyticsResponse.data,
-            risk: riskResponse.data,
+            risk: riskResponse?.data || null,
             allDocumentHoldings,
             duplicateRecords: consolidated.duplicateRecords,
             conflicts: consolidated.conflicts,
