@@ -66,11 +66,11 @@ def is_aggregation_question(question):
 
 
 LISTING_PATTERNS = (
-    r"\blist\s+all\\b",
-    r"\bshow\s+all\\b",
-    r"\ball\s+(?:investment|holding|fund)\s+names?\\b",
-    r"\b(?:investment|holding|fund)\s+names?\\b",
-    r"\bwhich\s+(?:investments|holdings|funds)\\b",
+    r"\blist\s+all\b",
+    r"\bshow\s+all\b",
+    r"\ball\s+(?:investment|holding|fund)\s+names?\b",
+    r"\b(?:investment|holding|fund)\s+names?\b",
+    r"\bwhich\s+(?:investments|holdings|funds)\b",
 )
 
 
