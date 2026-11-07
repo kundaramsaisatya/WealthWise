@@ -352,6 +352,7 @@ Return ONLY valid JSON in this structure:
 {{
     "currency": "USD",
     "report_date": "2021-03-31",
+    "account_holder": "Example Account Holder",
     "reported_portfolio_value": 1656064.53,
     "holdings": [
         {{
@@ -477,6 +478,12 @@ DOCUMENT:
         result.get("report_date")
     )
 
+    account_holder = result.get("account_holder")
+    if not isinstance(account_holder, str) or not account_holder.strip():
+        account_holder = None
+    else:
+        account_holder = " ".join(account_holder.strip().split())
+
     currency = normalize_currency(
         result.get("currency")
     )
@@ -500,6 +507,7 @@ DOCUMENT:
     return {
         "holdings": result["holdings"],
         "report_date": report_date,
+        "account_holder": account_holder,
         "currency": currency,
         "reported_portfolio_value": reported_value,
     }
@@ -549,6 +557,12 @@ def merge_batch_results(left, right):
             left["reported_portfolio_value"],
             right["reported_portfolio_value"],
             "portfolio values",
+        ),
+
+        "account_holder": merge_metadata_value(
+            left.get("account_holder"),
+            right.get("account_holder"),
+            "account holders",
         ),
     }
 
@@ -636,6 +650,7 @@ def extract_batch_with_splitting(batch_pages):
             "report_date": None,
             "currency": None,
             "reported_portfolio_value": None,
+            "account_holder": None,
         }
 
     try:
@@ -765,6 +780,7 @@ def extract_portfolio_from_pdf(file_path):
     report_dates = []
     currencies = []
     reported_values = []
+    account_holders = []
 
     for index, batch in enumerate(batches):
 
@@ -801,6 +817,9 @@ def extract_portfolio_from_pdf(file_path):
             currencies.append(
                 batch_result["currency"]
             )
+
+        if batch_result.get("account_holder"):
+            account_holders.append(batch_result["account_holder"])
 
         if batch_result["reported_portfolio_value"] is not None:
             reported_values.append(
@@ -847,6 +866,13 @@ def extract_portfolio_from_pdf(file_path):
         else None
     )
 
+    distinct_holders = set(account_holders)
+    account_holder = (
+        next(iter(distinct_holders))
+        if len(distinct_holders) == 1
+        else None
+    )
+
     if len(distinct_dates) > 1:
         print(
             "WARNING: Conflicting report dates:",
@@ -872,6 +898,7 @@ def extract_portfolio_from_pdf(file_path):
         "currency": currency,
         "total_value": total_value,
         "report_date": report_date,
+        "account_holder": account_holder,
         "holdings": normalized_holdings,
     }
 
