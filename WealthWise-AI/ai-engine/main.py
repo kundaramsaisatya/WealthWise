@@ -606,29 +606,67 @@ async def upload_document(
                     detail="No extractable text found in PDF.",
                 )
 
+            pdf_holdings = (
+                portfolio_data.get("holdings", [])
+                if isinstance(portfolio_data, dict)
+                else []
+            )
+
+            if not isinstance(pdf_holdings, list) or not pdf_holdings:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "No structured investment holdings could be "
+                        "extracted from this PDF. The document text may "
+                        "still be readable, but portfolio-wide answers "
+                        "require structured holdings."
+                    ),
+                )
+
             for chunk in chunks:
                 chunk["source"] = original_filename
                 chunk["document_type"] = "pdf"
 
-            vector_store.build_index(chunks)
+            # Persist PDF holdings in the same per-document format used
+            # by Excel. Chat, analytics and risk can then use one
+            # consolidated structured-data pipeline for both formats.
+            save_portfolio_data(
+                client_id,
+                document_id,
+                {
+                    "document_id": document_id,
+                    "filename": original_filename,
+                    "document_type": "pdf",
+                    "report_date": portfolio_data.get("report_date"),
+                    "currency": portfolio_data.get("currency"),
+                    "total_value": portfolio_data.get("total_value"),
+                    "holdings": pdf_holdings,
+                },
+            )
+
             client_vector_dir = VECTOR_DIR / client_id
-            vector_store.save(str(client_vector_dir))
+
+            try:
+                vector_store.build_index(chunks)
+                vector_store.save(str(client_vector_dir))
+            except Exception:
+                # Keep structured data and the vector index consistent.
+                get_portfolio_file(client_id, document_id).unlink(
+                    missing_ok=True
+                )
+                raise
 
             return {
                 "message": "PDF document processed successfully.",
                 "filename": original_filename,
                 "stored_filename": safe_filename,
                 "total_chunks": len(chunks),
+                "total_structured_holdings": len(pdf_holdings),
                 "client_id": client_id,
                 "status": "ready",
                 "document_type": "pdf",
                 "portfolio": portfolio_data,
-                "structured_holdings_saved": False,
-                "note": (
-                    "PDF text is indexed for retrieval. Structured PDF "
-                    "holdings are not yet persisted for portfolio-wide "
-                    "calculations."
-                ),
+                "structured_holdings_saved": True,
             }
 
         # ------------------------------------------
