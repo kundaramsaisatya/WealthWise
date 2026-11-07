@@ -818,6 +818,7 @@ async def upload_document(
             "document_type": "excel",
             "report_date": report_date,
             "account_holder": extracted_data.get("account_holder"),
+            "folio_metadata": extracted_data.get("folio_metadata", []),
             "sheets": extracted_data.get("sheets", {}),
         }
 
