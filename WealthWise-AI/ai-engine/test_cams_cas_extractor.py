@@ -67,6 +67,21 @@ Total                             0.99                                          
         self.assertAlmostEqual(holding["current_value"], 0.94)
         self.assertEqual(holding["source"], "CAMS")
 
+    def test_ignores_long_explanatory_column_when_finding_holder(self):
+        pages = [{
+            "page": 1,
+            "text": """Consolidated Account Summary
+As on 31-Oct-2026
+Email Id: kundaram@example.com The Consolidated Account Summary is brought to you as an investor friendly initiative by CAMS and KFintech, and lists the balances and valuation of Mutual Funds
+Saisatya Bhumeshwar Kundaram
+1047521975 INF209KB1O82 B66Y - Aditya Birla Sun Life PSU Equity 0.990 0.025 30-Oct-2026 37.52 0.94 CAMS
+Fund Direct-Growth (Demat)
+""",
+            "layout_text": "Consolidated Account Summary"
+        }]
+        result = extract_cams_cas(pages)
+        self.assertEqual(result["account_holder"], "Saisatya Bhumeshwar Kundaram")
+
     def test_ignores_non_cas_pdf(self):
         self.assertIsNone(extract_cams_cas([{"page": 1, "text": "Investment Portfolio Statement"}]))
 
