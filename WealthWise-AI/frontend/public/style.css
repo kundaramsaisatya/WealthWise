@@ -1698,3 +1698,183 @@ button:disabled {
     background: #d5eee1;
     color: #075a42;
 }
+
+/* =========================================
+   SHARED PRODUCT DESIGN SYSTEM
+   Applied across dashboard, goals and auth.
+========================================= */
+:root {
+    --ww-primary: var(--primary);
+    --ww-primary-hover: var(--primary-dark);
+    --ww-bg: var(--background);
+    --ww-surface: var(--surface);
+    --ww-border: var(--border);
+    --ww-radius-sm: 8px;
+    --ww-radius-md: 12px;
+    --ww-radius-lg: 16px;
+    --ww-space-1: 4px;
+    --ww-space-2: 8px;
+    --ww-space-3: 12px;
+    --ww-space-4: 16px;
+    --ww-space-5: 20px;
+    --ww-space-6: 24px;
+    --ww-space-8: 32px;
+    --ww-focus: 0 0 0 3px rgba(8, 127, 91, .14);
+}
+
+body {
+    background: var(--ww-bg);
+    color: var(--text);
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+h1, h2, h3, h4, p { overflow-wrap: anywhere; }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+
+:where(button, a, input, select, textarea):focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    box-shadow: var(--ww-focus);
+}
+
+:where(input, select, textarea) {
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: var(--ww-radius-sm);
+    background: #fff;
+    color: var(--text);
+    padding: 10px 12px;
+}
+
+:where(input, select, textarea)::placeholder { color: #9aa6b2; }
+:where(input, select, textarea):focus {
+    border-color: var(--primary);
+    outline: none;
+    box-shadow: var(--ww-focus);
+}
+
+:where(.content-card, .metric-card, .goal-form-card, .goal-card, .panel, .finding, .auth-card) {
+    border-radius: var(--ww-radius-lg);
+    border-color: var(--ww-border);
+    box-shadow: var(--shadow);
+}
+
+.primary-btn, .secondary-btn, .save-btn, .auth-card button {
+    min-height: 40px;
+    border-radius: var(--ww-radius-sm);
+    font-weight: 650;
+    transition: background-color .18s ease, border-color .18s ease, transform .18s ease;
+}
+
+.primary-btn:active, .secondary-btn:active { transform: translateY(1px); }
+
+/* Authentication pages */
+.auth-container {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at 12% 8%, rgba(8,127,91,.09), transparent 30%),
+        var(--background);
+}
+.auth-card {
+    width: min(100%, 440px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: clamp(24px, 5vw, 40px);
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    box-shadow: 0 18px 55px rgba(22,42,56,.08);
+}
+.auth-card h1 { color: var(--text); font-size: 27px; letter-spacing: -.7px; }
+.auth-card > p:first-of-type { color: var(--text-secondary); margin-bottom: 12px; }
+.auth-card label { color: var(--text); font-size: 12px; font-weight: 650; margin-top: 5px; }
+.auth-card input { width: 100%; min-height: 46px; }
+.auth-card button {
+    width: 100%;
+    margin: 12px 0 4px;
+    padding: 12px 16px;
+    border: 0;
+    background: var(--primary);
+    color: #fff;
+}
+.auth-card button:hover { background: var(--primary-dark); }
+.auth-card > p:last-child { text-align: center; color: var(--text-secondary); font-size: 12px; margin-top: 8px; }
+.auth-card a { color: var(--primary); font-weight: 650; text-decoration: none; }
+.auth-card a:hover { text-decoration: underline; }
+
+/* Financial goals: shared cards, fields and spacing */
+.goals-container, .assessment-wrap {
+    width: min(100% - 48px, 1240px);
+    margin: 0 auto;
+    padding: 28px 0 48px;
+}
+.goals-header, .page-head { margin: 24px 0 28px; }
+.goals-header h1, .page-head h1 { color: var(--text); font-size: clamp(26px, 3vw, 34px); letter-spacing: -.8px; }
+.goals-header p, .page-head .muted { color: var(--text-secondary); font-size: 14px; }
+.goal-form-card, .goal-card, .panel, .metric-card, .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--ww-radius-lg);
+    box-shadow: var(--shadow);
+}
+.goal-form-card, .goal-card, .panel { padding: 24px; }
+.goal-form-card h3, .goal-card h3, .panel h2 { color: var(--text); }
+.goal-form { gap: 18px; }
+.form-group { gap: 7px; }
+.form-group label { color: var(--text); font-size: 12px; font-weight: 650; }
+.form-group input, .form-group select, .allocation-input { width: 100%; min-height: 44px; border: 1px solid var(--border); border-radius: var(--ww-radius-sm); }
+.field-help, .goal-category, .muted, .note, .disclaimer { color: var(--text-secondary); }
+.goal-grid { gap: 18px; }
+.goal-status, .status { display: inline-flex; align-items: center; min-height: 26px; border-radius: 999px; font-weight: 650; }
+.progress-track, .bar-track { background: #edf2f0; }
+.progress-fill, .bar-fill { background: var(--primary); }
+.goal-actions button { min-height: 36px; border-radius: var(--ww-radius-sm); }
+.allocation-dialog { border-radius: 18px; }
+.allocation-row { border-color: var(--border); border-radius: var(--ww-radius-md); }
+.allocation-summary { background: var(--primary-light); color: var(--primary-dark); border-radius: var(--ww-radius-md); }
+
+/* Assessment and insight components */
+.assessment-wrap { color: var(--text); }
+.assessment-wrap .metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.assessment-wrap .metric-card { padding: 20px; }
+.assessment-wrap .metric-card strong { color: var(--text); font-size: clamp(18px, 2vw, 24px); }
+.assessment-wrap .finding { padding: 16px; }
+.assessment-wrap .section-title { color: var(--text); font-size: 17px; }
+.assessment-wrap .data-row { gap: 16px; }
+.assessment-wrap .error-box { border-radius: var(--ww-radius-md); }
+
+/* Tables and dense data */
+.table-container { border-radius: var(--ww-radius-md); }
+table { min-width: 680px; }
+th { position: sticky; top: 0; z-index: 1; }
+td, th { line-height: 1.5; }
+.investment-name { min-width: 190px; white-space: normal; }
+.investment-name strong { overflow-wrap: anywhere; }
+.content-card > .content-card { box-shadow: none; }
+
+/* Responsive consistency */
+@media (max-width: 900px) {
+    .assessment-wrap .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 650px) {
+    .goals-container, .assessment-wrap { width: min(100% - 32px, 100%); padding: 18px 0 32px; }
+    .goal-form-card, .goal-card, .panel { padding: 18px; }
+    .assessment-wrap .metric-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .assessment-wrap .metric-card { padding: 14px; }
+    .goals-header, .page-head { margin: 18px 0 22px; }
+}
+@media (max-width: 420px) {
+    .assessment-wrap .metric-grid { grid-template-columns: 1fr; }
+    .auth-container { padding: 16px; }
+    .auth-card { padding: 24px 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
