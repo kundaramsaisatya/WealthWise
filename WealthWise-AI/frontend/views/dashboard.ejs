@@ -38,11 +38,12 @@
         typeof accountSelection !== "undefined" && accountSelection
             ? {
                 activeAccountHolder: accountSelection.activeAccountHolder || null,
+                identityUnverified: accountSelection.identityUnverified === true,
                 excludedDocuments: Array.isArray(accountSelection.excludedDocuments)
                     ? accountSelection.excludedDocuments
                     : []
             }
-            : { activeAccountHolder: null, excludedDocuments: [] };
+            : { activeAccountHolder: null, identityUnverified: false, excludedDocuments: [] };
 
     const portfolioHoldings = Array.isArray(safePortfolio.holdings)
         ? safePortfolio.holdings
@@ -304,12 +305,21 @@
 
         <% if (safeAccountSelection.excludedDocuments?.length) { %>
             <div class="alert alert-account-review" role="status">
-                <strong>Some statements were kept out of this portfolio</strong>
+                <strong>
+                    <%= safeAccountSelection.identityUnverified
+                        ? "Account ownership could not be verified across statements"
+                        : "Some statements were kept out of this portfolio" %>
+                </strong>
                 <p>
-                    WealthWise selected <%= safeAccountSelection.activeAccountHolder %>
-                    as the active account holder. Statements with a different or
-                    unverified account holder are excluded to prevent mixing accounts.
-                    Re-upload older documents after the identity check is available.
+                    <% if (safeAccountSelection.identityUnverified) { %>
+                        No statement contained a verified account-holder name. WealthWise
+                        is showing only the newest single statement and is not combining
+                        other documents. Confirm ownership before relying on this portfolio.
+                    <% } else { %>
+                        WealthWise selected <%= safeAccountSelection.activeAccountHolder %>
+                        as the active account holder. Statements with a different or
+                        unverified account holder are excluded to prevent mixing accounts.
+                    <% } %>
                 </p>
                 <ul>
                     <% safeAccountSelection.excludedDocuments.forEach(item => { %>
