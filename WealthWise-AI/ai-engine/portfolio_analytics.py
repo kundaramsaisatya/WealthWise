@@ -372,7 +372,7 @@ def calculate_portfolio_metrics(portfolio, thresholds=None):
 
     unknown_asset_count = sum(
         1 for holding in validated_holdings
-        if holding["asset_class"] == "Other"
+        if holding["asset_class"] == "Unclassified"
     )
 
     unknown_sector_count = sum(
