@@ -187,6 +187,7 @@ def load_all_portfolio_holdings(client_id: str):
             "total_value": data.get("total_value"),
             "record_count": len(holdings),
             "report_date": data.get("report_date"),
+            "account_holder": data.get("account_holder"),
             "saved_at": data.get("saved_at"),
         })
 
@@ -644,6 +645,7 @@ async def upload_document(
                     "filename": original_filename,
                     "document_type": "pdf",
                     "report_date": portfolio_data.get("report_date"),
+                    "account_holder": portfolio_data.get("account_holder"),
                     "currency": portfolio_data.get("currency"),
                     "total_value": portfolio_data.get("total_value"),
                     "holdings": pdf_holdings,
@@ -728,6 +730,7 @@ async def upload_document(
                 "filename": original_filename,
                 "document_type": "excel",
                 "report_date": report_date,
+                "account_holder": extracted_data.get("account_holder"),
                 "currency": "INR",
                 "holdings": all_holdings,
             },
