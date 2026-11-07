@@ -64,18 +64,41 @@ document.addEventListener("DOMContentLoaded", () => {
         const data = await apiRequest("/performance");
         const performance = data.performance;
 
+        message.replaceChildren();
+
+        if (data.account_holder) {
+            const scope = createElement(
+                "p",
+                "performance-scope",
+                `Showing statements for ${data.account_holder}.`
+            );
+            message.appendChild(scope);
+        }
+
+        if (Array.isArray(data.excluded_account_documents) &&
+            data.excluded_account_documents.length) {
+            const warning = createElement(
+                "p",
+                "performance-warning",
+                `${data.excluded_account_documents.length} statement(s) from another or unverified account holder were excluded. Review the Documents section.`
+            );
+            message.appendChild(warning);
+        }
+
         if (
             !performance ||
             !Array.isArray(performance.history) ||
             performance.history.length < 2
         ) {
-            message.textContent =
-                "At least two valid historical statements are required.";
+            const empty = createElement(
+                "p",
+                "performance-empty",
+                "At least two valid historical statements for the selected account are required."
+            );
+            message.appendChild(empty);
             canvas.style.display = "none";
             return;
         }
-
-        message.textContent = "";
 
         new Chart(canvas, {
             type: "line",
