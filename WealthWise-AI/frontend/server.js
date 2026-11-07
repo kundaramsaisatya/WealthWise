@@ -820,61 +820,143 @@ app.get("/performance", requireAuth, async (req, res) => {
         const snapshots = [];
         const skippedDates = [];
 
+        const statementPriority = record => {
+            const name = String(record.documentName || "").toLowerCase();
+            if (/consolidated|\bcas\b/.test(name)) return 0;
+            if (/demat|holding.*statement/.test(name)) return 0;
+            if (/mutual|\bmf\b|amc/.test(name)) return 1;
+            return 2;
+        };
+
+        const reconciliationWarnings = [];
+
         for (const [date, records] of recordsByDate.entries()) {
+            let holdings = [];
+            let totalValue = null;
+            let hasTrustedTotal = false;
 
-            // Multiple documents on the same date may overlap.
-            if (records.length !== 1) {
-                skippedDates.push({
-                    report_date: date,
-                    reason: "Multiple documents exist for this date."
-                });
-                continue;
+            if (records.length === 1) {
+                const record = records[0];
+                holdings = record.holdings || [];
+
+                const hasCompleteValues =
+                    holdings.length > 0 &&
+                    holdings.every(holding =>
+                        isValidNumber(holding.currentValue) &&
+                        holding.currentValue >= 0
+                    );
+
+                hasTrustedTotal =
+                    record.totalValueSource === "reported" ||
+                    (
+                        record.totalValueSource !== "incomplete" &&
+                        hasCompleteValues
+                    );
+
+                if (hasTrustedTotal &&
+                    isValidNumber(record.totalValue) &&
+                    record.totalValue >= 0) {
+                    totalValue = record.totalValue;
+                }
+            } else {
+                // Multiple same-date statements can be complementary
+                // (e.g. CAS + Demat) or overlapping (e.g. CAS + AMC).
+                // Reconcile by instrument identity; never add document totals.
+                const groupedHoldings = new Map();
+
+                for (const record of records) {
+                    for (const holding of record.holdings || []) {
+                        const key = getHoldingKey(holding, record);
+                        if (!groupedHoldings.has(key)) groupedHoldings.set(key, []);
+                        groupedHoldings.get(key).push({
+                            ...holding,
+                            _statementPriority: statementPriority(record),
+                            _documentName: record.documentName || "Unknown document"
+                        });
+                    }
+                }
+
+                const reconciledHoldings = [];
+                let hasValuationDifference = false;
+
+                for (const [key, candidates] of groupedHoldings.entries()) {
+                    candidates.sort((a, b) =>
+                        a._statementPriority - b._statementPriority
+                    );
+
+                    const chosen = { ...candidates[0] };
+                    const values = candidates
+                        .map(item => item.currentValue)
+                        .filter(isValidNumber);
+
+                    if (values.length > 1 &&
+                        Math.max(...values) - Math.min(...values) > 1) {
+                        hasValuationDifference = true;
+                        reconciliationWarnings.push({
+                            report_date: date,
+                            holding: chosen.name || key,
+                            values,
+                            selected_source: chosen._documentName
+                        });
+                    }
+
+                    delete chosen._statementPriority;
+                    delete chosen._documentName;
+                    reconciledHoldings.push(chosen);
+                }
+
+                holdings = reconciledHoldings;
+                const complete = holdings.length > 0 &&
+                    holdings.every(holding =>
+                        isValidNumber(holding.currentValue) &&
+                        holding.currentValue >= 0
+                    );
+
+                const currencies = [...new Set(
+                    records.map(record => record.currency || "INR")
+                )];
+
+                if (currencies.length !== 1) {
+                    skippedDates.push({
+                        report_date: date,
+                        reason: "Same-date statements use different currencies."
+                    });
+                    continue;
+                }
+
+                if (!complete) {
+                    skippedDates.push({
+                        report_date: date,
+                        reason: "Same-date statements could not be fully reconciled because one or more holding values are missing."
+                    });
+                    continue;
+                }
+
+                totalValue = holdings.reduce(
+                    (sum, holding) => sum + holding.currentValue,
+                    0
+                );
+                hasTrustedTotal = true;
+
+                if (hasValuationDifference) {
+                    reconciliationWarnings.push({
+                        report_date: date,
+                        message: "Duplicate holdings had different reported values; the preferred statement source was selected."
+                    });
+                }
             }
 
-            const record = records[0];
-            const holdings = record.holdings || [];
-
-            // Do not treat missing values as zero.
-            const hasCompleteValues =
-                holdings.length > 0 &&
-                holdings.every(holding =>
-                    isValidNumber(holding.currentValue) &&
-                    holding.currentValue >= 0
-                );
-
-            // A statement's explicitly reported total is sufficient for
-            // portfolio-level history even when a few holding rows could
-            // not be extracted. Older records without this marker must still
-            // pass the complete-holdings check.
-            const hasTrustedTotal =
-                record.totalValueSource === "reported" ||
-                (
-                    record.totalValueSource !== "incomplete" &&
-                    hasCompleteValues
-                );
-
-            if (!hasTrustedTotal) {
+            if (!hasTrustedTotal || !isValidNumber(totalValue) || totalValue < 0) {
                 skippedDates.push({
                     report_date: date,
-                    reason: "No reliable reported portfolio total and holding values are incomplete."
-                });
-                continue;
-            }
-
-            if (
-                !isValidNumber(record.totalValue) ||
-                record.totalValue < 0
-            ) {
-                skippedDates.push({
-                    report_date: date,
-                    reason: "Invalid portfolio total."
+                    reason: "No reliable portfolio total or complete holding values are available."
                 });
                 continue;
             }
 
             snapshots.push({
                 report_date: date,
-                total_value: record.totalValue
+                total_value: Number(totalValue.toFixed(2))
             });
         }
 
@@ -896,6 +978,7 @@ app.get("/performance", requireAuth, async (req, res) => {
             skipped_dates: skippedDates,
             account_holder: accountSelection.activeAccountHolder,
             excluded_account_documents: accountSelection.excludedDocuments,
+            reconciliation_warnings: reconciliationWarnings,
             source: "MongoDB Portfolio records"
         });
 
