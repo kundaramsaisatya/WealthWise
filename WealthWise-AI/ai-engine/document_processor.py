@@ -11,12 +11,16 @@ def extract_text_from_pdf(file_path):
     for page_number, page in enumerate(reader.pages, start=1):
 
         text = page.extract_text()
+        # Layout mode preserves table column alignment. Keep normal text for
+        # chunking/RAG, and provide layout text to deterministic table parsers.
+        layout_text = page.extract_text(extraction_mode="layout")
 
         if text and text.strip():
 
             extracted_pages.append({
                 "page": page_number,
-                "text": text
+                "text": text,
+                "layout_text": layout_text or text
             })
 
     return extracted_pages
