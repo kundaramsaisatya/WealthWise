@@ -779,7 +779,7 @@ function initializePortfolioCharts() {
     }
 
     const formatChartLabel = (value, maxLineLength = 22) => {
-        const words = String(value || "Unknown").trim().split(/\\s+/);
+        const words = String(value || "Unknown").trim().split(/\s+/);
         const lines = [];
         let line = "";
 
