@@ -865,6 +865,80 @@ def extract_workbook_account_holder(workbook):
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
+def extract_folio_metadata(workbook):
+    """Extract explicitly reported nominee and KYC status by folio."""
+    results = []
+    for sheet_name in workbook.sheet_names:
+        try:
+            df = pd.read_excel(
+                workbook, sheet_name=sheet_name, header=None,
+                nrows=40, dtype=object
+            )
+        except Exception:
+            continue
+
+        header_index = None
+        columns = {}
+        for row_index, row in df.iterrows():
+            normalized = [normalize_column(v) if pd.notna(v) else "" for v in row.tolist()]
+            folio_col = next((i for i, v in enumerate(normalized) if v in {"folio no", "folio number", "folio"}), None)
+            nominee_col = next((i for i, v in enumerate(normalized) if v == "nominee"), None)
+            kyc_col = next((i for i, v in enumerate(normalized) if v in {"kyc pan status", "kyc status", "pan status"}), None)
+            amc_col = next((i for i, v in enumerate(normalized) if v in {"amc", "fund house"}), None)
+            if folio_col is not None and nominee_col is not None and kyc_col is not None:
+                header_index = row_index
+                columns = {"folio": folio_col, "nominee": nominee_col, "kyc": kyc_col, "amc": amc_col}
+                break
+
+        if header_index is None:
+            continue
+
+        for _, row in df.iloc[header_index + 1:].iterrows():
+            values = row.tolist()
+            folio_index = columns["folio"]
+            if folio_index >= len(values):
+                continue
+            folio = clean_text(values[folio_index])
+            if not folio:
+                continue
+            nominee = clean_text(values[columns["nominee"]]) if columns["nominee"] < len(values) else None
+            kyc = clean_text(values[columns["kyc"]]) if columns["kyc"] < len(values) else None
+            amc_index = columns["amc"]
+            amc = clean_text(values[amc_index]) if amc_index is not None and amc_index < len(values) else None
+            results.append({
+                "folio_number": folio,
+                "amc": amc,
+                "nominee_status": nominee,
+                "kyc_status": kyc,
+                "source_sheet": sheet_name,
+            })
+
+    # Preserve the most specific unique record per folio; do not guess
+    # when two source rows disagree.
+    grouped = {}
+    for item in results:
+        grouped.setdefault(item["folio_number"], []).append(item)
+
+    output = []
+    for folio, records in grouped.items():
+        signatures = {
+            (r["nominee_status"], r["kyc_status"], r["amc"])
+            for r in records
+        }
+        if len(signatures) == 1:
+            output.append(records[0])
+        else:
+            output.append({
+                "folio_number": folio,
+                "amc": None,
+                "nominee_status": None,
+                "kyc_status": None,
+                "source_sheet": records[0]["source_sheet"],
+                "verification_note": "Conflicting folio metadata across source rows; manual review required.",
+            })
+    return output
+
+
 # --------------------------------------------------
 # MAIN EXCEL EXTRACTION FUNCTION
 # --------------------------------------------------
@@ -877,6 +951,7 @@ def extract_excel(file_path):
     with pd.ExcelFile(file_path) as workbook:
 
         account_holder = extract_workbook_account_holder(workbook)
+        folio_metadata = extract_folio_metadata(workbook)
 
         for sheet_name in workbook.sheet_names:
 
@@ -914,5 +989,6 @@ def extract_excel(file_path):
     return {
         "report_date": report_date,
         "account_holder": account_holder,
+        "folio_metadata": folio_metadata,
         "sheets": extracted_data
     }

@@ -1172,6 +1172,11 @@ app.post(
 
                     const sheets = response.data.sheets;
                     accountHolder = response.data.account_holder || null;
+                    const folioMetadataByNumber = new Map(
+                        (Array.isArray(response.data.folio_metadata) ? response.data.folio_metadata : [])
+                            .filter(item => item?.folio_number)
+                            .map(item => [normalizeIdentifier(item.folio_number), item])
+                    );
                     console.log("EXCEL API RESPONSE:");
                     console.dir(response.data, { depth: 6 });
 
@@ -1218,6 +1223,9 @@ app.post(
                                 profitLossPercentage:
                                     item.profit_loss_percentage ?? null,
                                 folioNumber: item.folio_number ?? null,
+                                folioVerification: item.folio_number
+                                    ? (folioMetadataByNumber.get(normalizeIdentifier(item.folio_number)) || null)
+                                    : null,
                                 source: item.source ?? null,
                                 averageNav: item.average_nav ?? null,
                                 currentNav: item.current_nav ?? null,
