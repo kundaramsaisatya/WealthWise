@@ -16,6 +16,7 @@ from groq import (
 )
 
 from document_processor import extract_text_from_pdf
+from cams_cas_extractor import extract_cams_cas
 
 
 # ==================================================
@@ -147,7 +148,17 @@ def validate_number(value, field_name, holding_name):
             f"Negative {field_name} for {holding_name}."
         )
 
-    return round(float(value), 2)
+    number = float(value)
+
+    # Preserve fractional units and NAV precision. Rounding every numeric
+    # field to two decimals turned CAS quantities such as 0.025 into 0.03.
+    precision = {
+        "quantity": 8,
+        "average_nav": 6,
+        "current_nav": 6,
+    }.get(field_name, 2)
+
+    return round(number, precision)
 
 
 def normalize_currency(value):
@@ -772,6 +783,19 @@ def extract_portfolio_from_pdf(file_path):
         raise ValueError(
             "No readable text found in PDF."
         )
+
+    # CAMS/KFintech CAS tables have stable, labelled columns. Parse them
+    # deterministically before using an LLM, preserving exact ISINs,
+    # fractional units, NAV and market values.
+    cas_result = extract_cams_cas(pages)
+    if cas_result is not None:
+        normalized_holdings = [
+            normalize_holding(holding)
+            for holding in cas_result["holdings"]
+        ]
+        cas_result["holdings"] = normalized_holdings
+        print("DETERMINISTIC CAS EXTRACTION:", len(normalized_holdings), flush=True)
+        return cas_result
 
     batches = create_page_batches(
         pages,
