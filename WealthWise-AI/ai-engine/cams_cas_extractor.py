@@ -18,13 +18,18 @@ def _number(value):
 
 def extract_cams_cas(pages):
     """Deterministically parse text-based CAMS/KFintech Consolidated Account Summary rows."""
-    full_text = "\n".join(page.get("text", "") for page in pages)
+    # pypdf's default extraction can reorder table columns. Layout text keeps
+    # each CAS row aligned so the labelled values remain associated correctly.
+    def page_text(page):
+        return page.get("layout_text") or page.get("text", "")
+
+    full_text = "\n".join(page_text(page) for page in pages)
     if not re.search(r"Consolidated Account Summary", full_text, re.IGNORECASE):
         return None
 
     holder = None
     for page in pages:
-        for line in page.get("text", "").splitlines():
+        for line in page_text(page).splitlines():
             candidate = line.strip()
             if candidate and re.fullmatch(r"[A-Z][A-Za-z.' -]+(?:\s+[A-Z][A-Za-z.' -]+){1,5}", candidate):
                 if not any(token in candidate.lower() for token in ("consolidated account", "loads and fees")):
@@ -41,7 +46,7 @@ def extract_cams_cas(pages):
 
     holdings = []
     for page in pages:
-        lines = page.get("text", "").splitlines()
+        lines = page_text(page).splitlines()
         for index, line in enumerate(lines):
             match = ROW_RE.match(line)
             if not match:
