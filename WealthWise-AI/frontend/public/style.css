@@ -1878,3 +1878,12 @@ td, th { line-height: 1.5; }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+.alert-account-review {
+    background: #fff8e8;
+    color: #805316;
+    border: 1px solid #f0d9a6;
+}
+.alert-account-review p { color: #765b2e; }
+.alert-account-review ul { margin: 12px 0 0 18px; display: grid; gap: 6px; }
+.alert-account-review li { font-size: 12px; line-height: 1.55; }
