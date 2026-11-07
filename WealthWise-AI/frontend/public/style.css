@@ -1887,3 +1887,15 @@ td, th { line-height: 1.5; }
 .alert-account-review p { color: #765b2e; }
 .alert-account-review ul { margin: 12px 0 0 18px; display: grid; gap: 6px; }
 .alert-account-review li { font-size: 12px; line-height: 1.55; }
+
+.performance-scope,
+.performance-empty,
+.performance-warning {
+    margin: 8px 0;
+    padding: 10px 12px;
+    border-radius: var(--ww-radius-sm);
+    font-size: 12px;
+}
+.performance-scope { background: var(--primary-light); color: var(--primary-dark); }
+.performance-empty { background: #f3f6f8; color: var(--text-secondary); }
+.performance-warning { background: var(--warning-bg); color: #805316; }
