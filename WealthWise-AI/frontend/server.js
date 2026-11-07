@@ -744,6 +744,10 @@ app.get("/", requireAuth, async (req, res) => {
             allDocumentHoldings: [],
             duplicateRecords: [],
             conflicts: [],
+            accountSelection: {
+                activeAccountHolder: null,
+                excludedDocuments: []
+            },
             error: "Unable to load portfolio analytics."
         });
     }
