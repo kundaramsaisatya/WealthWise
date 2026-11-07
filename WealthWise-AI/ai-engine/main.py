@@ -1,5 +1,6 @@
 import os
 import json
+import math
 import re
 import secrets
 import shutil
@@ -30,7 +31,7 @@ from risk_engine import analyze_portfolio_risk
 from risk_explainer import generate_risk_explanation
 from document_processor import process_pdf
 from vector_store import VectorStore
-from rag import generate_answer
+from rag import generate_answer, is_listing_question
 
 
 # --------------------------------------------------
@@ -899,9 +900,37 @@ def chat(request: ChatRequest):
                 "holdings": holdings,
             }
 
-            calculation_data = calculate_portfolio_metrics(portfolio)
-            calculation_data["documents"] = documents
-            calculation_data["consolidation"] = consolidation
+            # Portfolio metrics require a valid numeric current value
+            # for every holding. A missing value must not crash simple
+            # document lookups such as listing investment names.
+            current_values_complete = all(
+                isinstance(h.get("current_value"), (int, float))
+                and not isinstance(h.get("current_value"), bool)
+                and math.isfinite(h.get("current_value"))
+                and h.get("current_value") >= 0
+                for h in holdings
+            )
+
+            if current_values_complete:
+                calculation_data = calculate_portfolio_metrics(portfolio)
+                calculation_data["documents"] = documents
+                calculation_data["consolidation"] = consolidation
+            elif is_listing_question(request.question):
+                # A name listing needs no valuation. Do not calculate or
+                # expose portfolio totals from incomplete holding data.
+                calculation_data = {
+                    "holdings": holdings,
+                    "holding_count": len(holdings),
+                    "documents": documents,
+                    "consolidation": consolidation,
+                    "data_incomplete": True,
+                }
+            else:
+                print(
+                    "CHAT METRICS UNAVAILABLE: missing or invalid "
+                    "current_value in one or more holdings.",
+                    flush=True,
+                )
 
         print("CHAT STRUCTURED HOLDINGS:", len(holdings))
 
