@@ -102,11 +102,9 @@ def analyze_data_quality(
             missing_cost_basis += 1
             document_issues.append("Missing cost basis")
 
-        # Sector (the Excel extractor provides "sub_category")
-        sector_value = (
-            holding.get("sector")
-            or holding.get("sub_category")
-        )
+        # Fund sub-categories such as Large Cap and Small Cap are not
+        # business sectors. Only explicitly extracted sector data counts.
+        sector_value = holding.get("sector")
 
         if not sector_value or str(
             sector_value
