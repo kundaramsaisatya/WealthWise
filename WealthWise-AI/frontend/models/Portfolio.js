@@ -63,6 +63,12 @@ const holdingSchema = new mongoose.Schema({
         trim: true
     },
 
+    // Explicit folio-level KYC and nominee metadata from statement schedules.
+    folioVerification: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null
+    },
+
     source: {
         type: String,
         default: null
