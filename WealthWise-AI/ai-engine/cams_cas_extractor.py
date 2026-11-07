@@ -21,7 +21,12 @@ def extract_cams_cas(pages):
     # pypdf's default extraction can reorder table columns. Layout text keeps
     # each CAS row aligned so the labelled values remain associated correctly.
     def page_text(page):
-        return page.get("layout_text") or page.get("text", "")
+        layout = page.get("layout_text") or ""
+        # Some PDF layouts are incomplete. Use layout mode only when it
+        # actually contains a recognizable CAS holding row.
+        if any(ROW_RE.match(line) for line in layout.splitlines()):
+            return layout
+        return page.get("text", "")
 
     full_text = "\n".join(page_text(page) for page in pages)
     if not re.search(r"Consolidated Account Summary", full_text, re.IGNORECASE):
@@ -41,7 +46,7 @@ def extract_cams_cas(pages):
                 continue
             if words[0].casefold() in excluded_starters:
                 continue
-            if re.fullmatch(r"[A-Z][A-Za-z.'-]*(?:\\s+[A-Z][A-Za-z.'-]*){1,5}", candidate):
+            if re.fullmatch(r"[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){1,5}", candidate):
                 holder = candidate
                 break
         if holder:
