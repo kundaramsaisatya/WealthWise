@@ -263,6 +263,29 @@
         <% } %>
 
 
+        <% if (safeAccountSelection.excludedDocuments?.length) { %>
+            <div class="alert alert-account-review" role="status">
+                <strong>Some statements were kept out of this portfolio</strong>
+                <p>
+                    WealthWise selected <%= safeAccountSelection.activeAccountHolder %>
+                    as the active account holder. Statements with a different or
+                    unverified account holder are excluded to prevent mixing accounts.
+                    Re-upload older documents after the identity check is available.
+                </p>
+                <ul>
+                    <% safeAccountSelection.excludedDocuments.forEach(item => { %>
+                        <li>
+                            <strong><%= item.documentName %></strong>
+                            — <%= item.reason %>
+                            <% if (item.accountHolder) { %>
+                                (Account holder: <%= item.accountHolder %>)
+                            <% } %>
+                        </li>
+                    <% }) %>
+                </ul>
+            </div>
+        <% } %>
+
         <!-- OVERVIEW -->
 
         <section id="overview" class="page-section">
