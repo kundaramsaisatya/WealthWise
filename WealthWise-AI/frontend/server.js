@@ -463,6 +463,31 @@ function createAnalyticsPayload(clientId, portfolio) {
 // REGISTER
 // --------------------------------------------------
 
+function establishAuthenticatedSession(req, user, res) {
+    req.session.regenerate(error => {
+        if (error) {
+            console.error("Session regeneration error:", error);
+            return res.status(500).send("Unable to establish a secure session.");
+        }
+
+        req.session.user = {
+            id: user._id,
+            name: user.name,
+            clientId: user.clientId
+        };
+
+        req.session.save(saveError => {
+            if (saveError) {
+                console.error("Session save error:", saveError);
+                return res.status(500).send("Unable to establish a secure session.");
+            }
+
+            res.redirect("/");
+        });
+    });
+}
+
+
 app.post("/register", async (req, res) => {
 
     try {
@@ -491,13 +516,7 @@ app.post("/register", async (req, res) => {
             clientId: `CLIENT-${crypto.randomUUID()}`
         });
 
-        req.session.user = {
-            id: user._id,
-            name: user.name,
-            clientId: user.clientId
-        };
-
-        res.redirect("/");
+        return establishAuthenticatedSession(req, user, res);
 
     } catch (error) {
         console.error("Registration error:", error);
@@ -523,13 +542,7 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password.");
         }
 
-        req.session.user = {
-            id: user._id,
-            name: user.name,
-            clientId: user.clientId
-        };
-
-        res.redirect("/");
+        return establishAuthenticatedSession(req, user, res);
 
     } catch (error) {
         console.error("Login error:", error);
@@ -2473,6 +2486,10 @@ app.get("/financial-goals/:id/assessment", requireAuth, (req, res) => {
 connectDB()
     .then(() => {
 
+        if (process.env.NODE_ENV === "production") {
+            app.set("trust proxy", 1);
+        }
+
         sessionMiddleware = session({
             secret: process.env.SESSION_SECRET,
             resave: false,
@@ -2483,7 +2500,7 @@ connectDB()
             }),
             cookie: {
                 httpOnly: true,
-                secure: false,
+                secure: process.env.NODE_ENV === "production",
                 sameSite: "lax",
                 maxAge: 1000 * 60 * 60 * 24
             }
