@@ -127,6 +127,51 @@ function getSnapshotDate(snapshot) {
 }
 
 
+function selectAccountHolderSnapshots(snapshots) {
+    const identified = snapshots.filter(snapshot =>
+        typeof snapshot.accountHolder === "string" &&
+        snapshot.accountHolder.trim()
+    );
+
+    if (identified.length === 0) {
+        return {
+            snapshots,
+            activeAccountHolder: null,
+            excludedDocuments: []
+        };
+    }
+
+    const latestIdentified = [...identified].sort((a, b) =>
+        getSnapshotDate(b) - getSnapshotDate(a) ||
+        new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+    )[0];
+
+    const activeAccountHolder = latestIdentified.accountHolder.trim();
+    const activeKey = normalizeName(activeAccountHolder);
+
+    const selected = snapshots.filter(snapshot =>
+        normalizeName(snapshot.accountHolder) === activeKey
+    );
+
+    const excludedDocuments = snapshots
+        .filter(snapshot => normalizeName(snapshot.accountHolder) !== activeKey)
+        .map(snapshot => ({
+            documentName: snapshot.documentName || "Unknown document",
+            accountHolder: snapshot.accountHolder || null,
+            reportDate: snapshot.reportDate || null,
+            reason: snapshot.accountHolder
+                ? "Different account holder."
+                : "Account holder could not be verified."
+        }));
+
+    return {
+        snapshots: selected,
+        activeAccountHolder,
+        excludedDocuments
+    };
+}
+
+
 function getHoldingKey(holding, snapshot) {
 
     const isin = normalizeIdentifier(holding.isin);
@@ -168,8 +213,39 @@ function getHoldingKey(holding, snapshot) {
 
 function consolidatePortfolios(allPortfolios) {
 
-    const actualSnapshots = allPortfolios
+    const nonDemoSnapshots = allPortfolios
         .filter(snapshot => !isDemoDocument(snapshot));
+
+    const datedSnapshots = nonDemoSnapshots
+        .filter(snapshot => getSnapshotDate(snapshot).getTime() > 0);
+
+    const latestSnapshotDate = datedSnapshots.length
+        ? Math.max(...datedSnapshots.map(snapshot => getSnapshotDate(snapshot).getTime()))
+        : null;
+
+    // A current portfolio is built from statements for the same valuation
+    // window. Older statements remain available to historical performance,
+    // but must not silently contribute positions to today's balance.
+    const SNAPSHOT_DATE_TOLERANCE_DAYS = 7;
+    const snapshotCutoff = latestSnapshotDate === null
+        ? null
+        : latestSnapshotDate - SNAPSHOT_DATE_TOLERANCE_DAYS * 24 * 60 * 60 * 1000;
+
+    const actualSnapshots = latestSnapshotDate === null
+        ? nonDemoSnapshots
+        : datedSnapshots.filter(snapshot =>
+            getSnapshotDate(snapshot).getTime() >= snapshotCutoff &&
+            getSnapshotDate(snapshot).getTime() <= latestSnapshotDate
+        );
+
+    const excludedSnapshots = nonDemoSnapshots
+        .filter(snapshot => !actualSnapshots.includes(snapshot))
+        .map(snapshot => ({
+            documentName: snapshot.documentName || "Unknown document",
+            accountHolder: snapshot.accountHolder || null,
+            reportDate: snapshot.reportDate || null,
+            reason: "Statement is outside the current 7-day valuation window."
+        }));
 
     const groups = new Map();
 
@@ -345,7 +421,8 @@ function consolidatePortfolios(allPortfolios) {
 
         duplicateRecords,
         conflicts,
-        actualSnapshots
+        actualSnapshots,
+        excludedSnapshots
     };
 }
 
@@ -386,6 +463,31 @@ function createAnalyticsPayload(clientId, portfolio) {
 // REGISTER
 // --------------------------------------------------
 
+function establishAuthenticatedSession(req, user, res) {
+    req.session.regenerate(error => {
+        if (error) {
+            console.error("Session regeneration error:", error);
+            return res.status(500).send("Unable to establish a secure session.");
+        }
+
+        req.session.user = {
+            id: user._id,
+            name: user.name,
+            clientId: user.clientId
+        };
+
+        req.session.save(saveError => {
+            if (saveError) {
+                console.error("Session save error:", saveError);
+                return res.status(500).send("Unable to establish a secure session.");
+            }
+
+            res.redirect("/");
+        });
+    });
+}
+
+
 app.post("/register", async (req, res) => {
 
     try {
@@ -414,13 +516,7 @@ app.post("/register", async (req, res) => {
             clientId: `CLIENT-${crypto.randomUUID()}`
         });
 
-        req.session.user = {
-            id: user._id,
-            name: user.name,
-            clientId: user.clientId
-        };
-
-        res.redirect("/");
+        return establishAuthenticatedSession(req, user, res);
 
     } catch (error) {
         console.error("Registration error:", error);
@@ -446,13 +542,7 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password.");
         }
 
-        req.session.user = {
-            id: user._id,
-            name: user.name,
-            clientId: user.clientId
-        };
-
-        res.redirect("/");
+        return establishAuthenticatedSession(req, user, res);
 
     } catch (error) {
         console.error("Login error:", error);
@@ -550,11 +640,14 @@ app.get("/", requireAuth, async (req, res) => {
     try {
         const clientId = req.session.user.clientId;
 
-        const allPortfolios = await Portfolio.find({ clientId })
+        const allPortfolioRecords = await Portfolio.find({ clientId })
             .sort({ reportDate: -1, createdAt: -1 })
             .lean();
 
-        const allDocumentHoldings = allPortfolios.flatMap(snapshot =>
+        const accountSelection = selectAccountHolderSnapshots(allPortfolioRecords);
+        const allPortfolios = accountSelection.snapshots;
+
+        const allDocumentHoldings = allPortfolioRecords.flatMap(snapshot =>
             (snapshot.holdings || []).map(holding => ({
                 ...holding,
                 documentName: snapshot.documentName || "Unknown document",
@@ -566,6 +659,10 @@ app.get("/", requireAuth, async (req, res) => {
 
         const consolidated = consolidatePortfolios(allPortfolios);
         const portfolio = consolidated.portfolio;
+        portfolio.accountHolder = accountSelection.activeAccountHolder;
+        portfolio.excludedAccountDocuments = accountSelection.excludedDocuments;
+        accountSelection.excludedDocuments.push(...(consolidated.excludedSnapshots || []));
+        portfolio.excludedAccountDocuments = accountSelection.excludedDocuments;
 
         if (portfolio.holdings.length === 0) {
 
@@ -576,6 +673,7 @@ app.get("/", requireAuth, async (req, res) => {
                 allDocumentHoldings,
                 duplicateRecords: [],
                 conflicts: [],
+                accountSelection,
                 error: "No actual investment holdings found."
             });
         }
@@ -594,6 +692,7 @@ app.get("/", requireAuth, async (req, res) => {
                 allDocumentHoldings,
                 duplicateRecords: consolidated.duplicateRecords,
                 conflicts: consolidated.conflicts,
+                accountSelection,
                 error: "No holdings have verified current market values."
             });
         }
@@ -607,22 +706,27 @@ app.get("/", requireAuth, async (req, res) => {
             }
         );
 
-        const riskResponse = await axios.post(
-            `${AI_URL}/risk`,
-            portfolioPayload,
-            {
-                headers: getServiceHeaders(),
-                timeout: 30000
-            }
-        );
+        // A partial portfolio can support a verified subtotal, but it
+        // must not be presented as a complete risk assessment.
+        const riskResponse = portfolio.isPartial
+            ? null
+            : await axios.post(
+                `${AI_URL}/risk`,
+                portfolioPayload,
+                {
+                    headers: getServiceHeaders(),
+                    timeout: 30000
+                }
+            );
 
         res.render("dashboard", {
             portfolio,
             analytics: analyticsResponse.data,
-            risk: riskResponse.data,
+            risk: riskResponse?.data || null,
             allDocumentHoldings,
             duplicateRecords: consolidated.duplicateRecords,
             conflicts: consolidated.conflicts,
+            accountSelection,
             error: null
         });
 
@@ -656,9 +760,11 @@ app.get("/performance", requireAuth, async (req, res) => {
         const clientId = req.session.user.clientId;
 
         // Fetch only this client's historical portfolio records.
-        const portfolios = await Portfolio.find({ clientId })
+        const allPortfolioRecords = await Portfolio.find({ clientId })
             .sort({ reportDate: 1, createdAt: 1 })
             .lean();
+        const accountSelection = selectAccountHolderSnapshots(allPortfolioRecords);
+        const portfolios = accountSelection.snapshots;
             
         console.log("\n========== PERFORMANCE DEBUG ==========");
         console.log("Client ID:", clientId);
@@ -714,61 +820,143 @@ app.get("/performance", requireAuth, async (req, res) => {
         const snapshots = [];
         const skippedDates = [];
 
+        const statementPriority = record => {
+            const name = String(record.documentName || "").toLowerCase();
+            if (/consolidated|\bcas\b/.test(name)) return 0;
+            if (/demat|holding.*statement/.test(name)) return 0;
+            if (/mutual|\bmf\b|amc/.test(name)) return 1;
+            return 2;
+        };
+
+        const reconciliationWarnings = [];
+
         for (const [date, records] of recordsByDate.entries()) {
+            let holdings = [];
+            let totalValue = null;
+            let hasTrustedTotal = false;
 
-            // Multiple documents on the same date may overlap.
-            if (records.length !== 1) {
-                skippedDates.push({
-                    report_date: date,
-                    reason: "Multiple documents exist for this date."
-                });
-                continue;
+            if (records.length === 1) {
+                const record = records[0];
+                holdings = record.holdings || [];
+
+                const hasCompleteValues =
+                    holdings.length > 0 &&
+                    holdings.every(holding =>
+                        isValidNumber(holding.currentValue) &&
+                        holding.currentValue >= 0
+                    );
+
+                hasTrustedTotal =
+                    record.totalValueSource === "reported" ||
+                    (
+                        record.totalValueSource !== "incomplete" &&
+                        hasCompleteValues
+                    );
+
+                if (hasTrustedTotal &&
+                    isValidNumber(record.totalValue) &&
+                    record.totalValue >= 0) {
+                    totalValue = record.totalValue;
+                }
+            } else {
+                // Multiple same-date statements can be complementary
+                // (e.g. CAS + Demat) or overlapping (e.g. CAS + AMC).
+                // Reconcile by instrument identity; never add document totals.
+                const groupedHoldings = new Map();
+
+                for (const record of records) {
+                    for (const holding of record.holdings || []) {
+                        const key = getHoldingKey(holding, record);
+                        if (!groupedHoldings.has(key)) groupedHoldings.set(key, []);
+                        groupedHoldings.get(key).push({
+                            ...holding,
+                            _statementPriority: statementPriority(record),
+                            _documentName: record.documentName || "Unknown document"
+                        });
+                    }
+                }
+
+                const reconciledHoldings = [];
+                let hasValuationDifference = false;
+
+                for (const [key, candidates] of groupedHoldings.entries()) {
+                    candidates.sort((a, b) =>
+                        a._statementPriority - b._statementPriority
+                    );
+
+                    const chosen = { ...candidates[0] };
+                    const values = candidates
+                        .map(item => item.currentValue)
+                        .filter(isValidNumber);
+
+                    if (values.length > 1 &&
+                        Math.max(...values) - Math.min(...values) > 1) {
+                        hasValuationDifference = true;
+                        reconciliationWarnings.push({
+                            report_date: date,
+                            holding: chosen.name || key,
+                            values,
+                            selected_source: chosen._documentName
+                        });
+                    }
+
+                    delete chosen._statementPriority;
+                    delete chosen._documentName;
+                    reconciledHoldings.push(chosen);
+                }
+
+                holdings = reconciledHoldings;
+                const complete = holdings.length > 0 &&
+                    holdings.every(holding =>
+                        isValidNumber(holding.currentValue) &&
+                        holding.currentValue >= 0
+                    );
+
+                const currencies = [...new Set(
+                    records.map(record => record.currency || "INR")
+                )];
+
+                if (currencies.length !== 1) {
+                    skippedDates.push({
+                        report_date: date,
+                        reason: "Same-date statements use different currencies."
+                    });
+                    continue;
+                }
+
+                if (!complete) {
+                    skippedDates.push({
+                        report_date: date,
+                        reason: "Same-date statements could not be fully reconciled because one or more holding values are missing."
+                    });
+                    continue;
+                }
+
+                totalValue = holdings.reduce(
+                    (sum, holding) => sum + holding.currentValue,
+                    0
+                );
+                hasTrustedTotal = true;
+
+                if (hasValuationDifference) {
+                    reconciliationWarnings.push({
+                        report_date: date,
+                        message: "Duplicate holdings had different reported values; the preferred statement source was selected."
+                    });
+                }
             }
 
-            const record = records[0];
-            const holdings = record.holdings || [];
-
-            // Do not treat missing values as zero.
-            const hasCompleteValues =
-                holdings.length > 0 &&
-                holdings.every(holding =>
-                    isValidNumber(holding.currentValue) &&
-                    holding.currentValue >= 0
-                );
-
-            // A statement's explicitly reported total is sufficient for
-            // portfolio-level history even when a few holding rows could
-            // not be extracted. Older records without this marker must still
-            // pass the complete-holdings check.
-            const hasTrustedTotal =
-                record.totalValueSource === "reported" ||
-                (
-                    record.totalValueSource !== "incomplete" &&
-                    hasCompleteValues
-                );
-
-            if (!hasTrustedTotal) {
+            if (!hasTrustedTotal || !isValidNumber(totalValue) || totalValue < 0) {
                 skippedDates.push({
                     report_date: date,
-                    reason: "No reliable reported portfolio total and holding values are incomplete."
-                });
-                continue;
-            }
-
-            if (
-                !isValidNumber(record.totalValue) ||
-                record.totalValue < 0
-            ) {
-                skippedDates.push({
-                    report_date: date,
-                    reason: "Invalid portfolio total."
+                    reason: "No reliable portfolio total or complete holding values are available."
                 });
                 continue;
             }
 
             snapshots.push({
                 report_date: date,
-                total_value: record.totalValue
+                total_value: Number(totalValue.toFixed(2))
             });
         }
 
@@ -788,6 +976,9 @@ app.get("/performance", requireAuth, async (req, res) => {
         return res.json({
             performance: response.data.performance,
             skipped_dates: skippedDates,
+            account_holder: accountSelection.activeAccountHolder,
+            excluded_account_documents: accountSelection.excludedDocuments,
+            reconciliation_warnings: reconciliationWarnings,
             source: "MongoDB Portfolio records"
         });
 
@@ -891,6 +1082,7 @@ app.post(
                 let holdings = [];
                 let currency = "INR";
                 let reportDate = null;
+                let accountHolder = null;
                 let reportedTotalValue = null;
 
                 // PDF PROCESSING
@@ -928,6 +1120,7 @@ app.post(
                     }));
 
                     currency = extracted.currency || "INR";
+                    accountHolder = extracted.account_holder || null;
 
                     if (
                         extracted.report_date &&
@@ -974,6 +1167,7 @@ app.post(
                 else if (extension === ".xlsx") {
 
                     const sheets = response.data.sheets;
+                    accountHolder = response.data.account_holder || null;
                     console.log("EXCEL API RESPONSE:");
                     console.dir(response.data, { depth: 6 });
 
@@ -1141,6 +1335,7 @@ app.post(
                     currency,
                     totalValue: Number(snapshotTotal.toFixed(2)),
                     totalValueSource,
+                    accountHolder,
                     reportDate,
                     holdings
                 });
@@ -2374,6 +2569,10 @@ app.get("/financial-goals/:id/assessment", requireAuth, (req, res) => {
 connectDB()
     .then(() => {
 
+        if (process.env.NODE_ENV === "production") {
+            app.set("trust proxy", 1);
+        }
+
         sessionMiddleware = session({
             secret: process.env.SESSION_SECRET,
             resave: false,
@@ -2384,7 +2583,7 @@ connectDB()
             }),
             cookie: {
                 httpOnly: true,
-                secure: false,
+                secure: process.env.NODE_ENV === "production",
                 sameSite: "lax",
                 maxAge: 1000 * 60 * 60 * 24
             }

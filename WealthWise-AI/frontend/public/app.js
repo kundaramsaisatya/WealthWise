@@ -64,40 +64,110 @@ document.addEventListener("DOMContentLoaded", () => {
         const data = await apiRequest("/performance");
         const performance = data.performance;
 
+        message.replaceChildren();
+
+        if (data.account_holder) {
+            const scope = createElement(
+                "p",
+                "performance-scope",
+                `Showing statements for ${data.account_holder}.`
+            );
+            message.appendChild(scope);
+        }
+
+        if (Array.isArray(data.excluded_account_documents) &&
+            data.excluded_account_documents.length) {
+            const warning = createElement(
+                "p",
+                "performance-warning",
+                `${data.excluded_account_documents.length} statement(s) from another or unverified account holder were excluded. Review the Documents section.`
+            );
+            message.appendChild(warning);
+        }
+
+        if (Array.isArray(data.reconciliation_warnings) &&
+            data.reconciliation_warnings.length) {
+            const warning = createElement(
+                "p",
+                "performance-warning",
+                `${data.reconciliation_warnings.length} same-date holding reconciliation warning(s) were detected. Preferred statement sources were used; review the Reconciliation section.`
+            );
+            message.appendChild(warning);
+        }
+
         if (
             !performance ||
             !Array.isArray(performance.history) ||
             performance.history.length < 2
         ) {
-            message.textContent =
-                "At least two valid historical statements are required.";
+            const empty = createElement(
+                "p",
+                "performance-empty",
+                "At least two valid historical statements for the selected account are required."
+            );
+            message.appendChild(empty);
             canvas.style.display = "none";
             return;
         }
 
-        message.textContent = "";
-
         new Chart(canvas, {
             type: "line",
             data: {
-                labels: performance.history.map(item =>
-                    item.report_date
-                ),
+                labels: performance.history.map(item => {
+                    const date = new Date(`${item.report_date}T00:00:00`);
+                    return Number.isNaN(date.getTime())
+                        ? item.report_date
+                        : date.toLocaleDateString("en-IN", {
+                            month: "short",
+                            year: "numeric"
+                        });
+                }),
                 datasets: [{
-                    label: "Portfolio Value (₹)",
+                    label: "Portfolio Value",
                     data: performance.history.map(item =>
                         Number(item.portfolio_value)
                     ),
-                    tension: 0.3,
+                    tension: 0.28,
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
                     fill: false
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: "index"
+                },
+                plugins: {
+                    legend: {
+                        position: "top",
+                        labels: { usePointStyle: true, boxWidth: 10 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: context => "Portfolio Value: " +
+                                new Intl.NumberFormat("en-IN", {
+                                    style: "currency",
+                                    currency: "INR",
+                                    maximumFractionDigits: 0
+                                }).format(context.parsed.y)
+                        }
+                    }
+                },
                 scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { maxRotation: 0 }
+                    },
                     y: {
-                        beginAtZero: false
+                        beginAtZero: false,
+                        ticks: {
+                            callback: value => "₹" +
+                                Number(value).toLocaleString("en-IN")
+                        }
                     }
                 }
             }

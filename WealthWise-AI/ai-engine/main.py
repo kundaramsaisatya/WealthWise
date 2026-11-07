@@ -187,6 +187,7 @@ def load_all_portfolio_holdings(client_id: str):
             "total_value": data.get("total_value"),
             "record_count": len(holdings),
             "report_date": data.get("report_date"),
+            "account_holder": data.get("account_holder"),
             "saved_at": data.get("saved_at"),
         })
 
@@ -289,8 +290,9 @@ def consolidate_holdings(holdings: list, documents: list):
 
 def load_latest_portfolio(client_id: str, document_type: str | None = None):
     """
-    Return the newest snapshot, optionally restricted to one document type.
-    This prevents a PDF-specific question from silently using Excel records.
+    Return the newest valuation snapshot for the most recently identified
+    account holder. This prevents unrelated people’s statements from being
+    combined in analytics, risk, or document-grounded portfolio answers.
     """
     holdings, documents = load_all_portfolio_holdings(client_id)
 
@@ -298,6 +300,32 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
         documents = [
             d for d in documents
             if (d.get("document_type") or "").lower() == document_type.lower()
+        ]
+
+    if not documents:
+        return [], [], {}
+
+    all_documents_before_account_filter = list(documents)
+    identified_documents = [
+        d for d in documents
+        if isinstance(d.get("account_holder"), str)
+        and d["account_holder"].strip()
+    ]
+
+    active_account_holder = None
+    if identified_documents:
+        latest_identity_document = max(
+            identified_documents,
+            key=lambda d: (d.get("report_date") or "", d.get("saved_at") or ""),
+        )
+        active_account_holder = " ".join(
+            latest_identity_document["account_holder"].strip().casefold().split()
+        )
+        documents = [
+            d for d in documents
+            if " ".join(
+                str(d.get("account_holder") or "").strip().casefold().split()
+            ) == active_account_holder
         ]
 
     if not documents:
@@ -319,13 +347,46 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
 
     consolidated, info = consolidate_holdings(selected_holdings, selected)
     info["report_date"] = latest_date or None
+    info["account_holder"] = (
+        selected[0].get("account_holder") if selected else active_account_holder
+    )
+    info["excluded_account_document_count"] = (
+        len(all_documents_before_account_filter) - len(documents)
+        if active_account_holder else 0
+    )
 
     return consolidated, selected, info
 
 
 def build_history_records(client_id: str):
-    """One record per holding per saved report, for history coverage checks."""
-    holdings, _ = load_all_portfolio_holdings(client_id)
+    """One record per holding per saved report for the active account only."""
+    holdings, documents = load_all_portfolio_holdings(client_id)
+
+    identified = [
+        document for document in documents
+        if isinstance(document.get("account_holder"), str)
+        and document["account_holder"].strip()
+    ]
+
+    if identified:
+        latest = max(
+            identified,
+            key=lambda d: (d.get("report_date") or "", d.get("saved_at") or ""),
+        )
+        active_holder = " ".join(
+            latest["account_holder"].strip().casefold().split()
+        )
+        active_document_ids = {
+            document.get("document_id")
+            for document in documents
+            if " ".join(
+                str(document.get("account_holder") or "").strip().casefold().split()
+            ) == active_holder
+        }
+        holdings = [
+            holding for holding in holdings
+            if holding.get("document_id") in active_document_ids
+        ]
 
     return [
         {
@@ -644,6 +705,7 @@ async def upload_document(
                     "filename": original_filename,
                     "document_type": "pdf",
                     "report_date": portfolio_data.get("report_date"),
+                    "account_holder": portfolio_data.get("account_holder"),
                     "currency": portfolio_data.get("currency"),
                     "total_value": portfolio_data.get("total_value"),
                     "holdings": pdf_holdings,
@@ -728,6 +790,7 @@ async def upload_document(
                 "filename": original_filename,
                 "document_type": "excel",
                 "report_date": report_date,
+                "account_holder": extracted_data.get("account_holder"),
                 "currency": "INR",
                 "holdings": all_holdings,
             },
@@ -754,6 +817,7 @@ async def upload_document(
             "status": "ready",
             "document_type": "excel",
             "report_date": report_date,
+            "account_holder": extracted_data.get("account_holder"),
             "sheets": extracted_data.get("sheets", {}),
         }
 

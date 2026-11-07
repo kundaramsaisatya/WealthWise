@@ -39,9 +39,11 @@
         });
     };
 
-    const totalValue = Number(
-        safeAnalytics?.total_value ?? safePortfolio.totalValue ?? 0
-    );
+    const isPartialPortfolio = safePortfolio.isPartial === true;
+
+    const totalValue = isPartialPortfolio
+        ? safePortfolio.verifiedTotalValue
+        : Number(safeAnalytics?.total_value ?? safePortfolio.totalValue ?? 0);
 
     const totalInvested =
         safeAnalytics?.total_invested !== undefined
@@ -263,6 +265,39 @@
         <% } %>
 
 
+        <% if (isPartialPortfolio) { %>
+            <div class="alert alert-account-review" role="alert">
+                <strong>Portfolio valuation is incomplete</strong>
+                <p>
+                    <%= safePortfolio.unverifiedHoldingCount %> holding(s) have missing or conflicting values.
+                    The amount below is only the verified subtotal; total portfolio value and risk assessment are withheld until the records are resolved.
+                </p>
+            </div>
+        <% } %>
+
+        <% if (safeAccountSelection.excludedDocuments?.length) { %>
+            <div class="alert alert-account-review" role="status">
+                <strong>Some statements were kept out of this portfolio</strong>
+                <p>
+                    WealthWise selected <%= safeAccountSelection.activeAccountHolder %>
+                    as the active account holder. Statements with a different or
+                    unverified account holder are excluded to prevent mixing accounts.
+                    Re-upload older documents after the identity check is available.
+                </p>
+                <ul>
+                    <% safeAccountSelection.excludedDocuments.forEach(item => { %>
+                        <li>
+                            <strong><%= item.documentName %></strong>
+                            — <%= item.reason %>
+                            <% if (item.accountHolder) { %>
+                                (Account holder: <%= item.accountHolder %>)
+                            <% } %>
+                        </li>
+                    <% }) %>
+                </ul>
+            </div>
+        <% } %>
+
         <!-- OVERVIEW -->
 
         <section id="overview" class="page-section">
@@ -288,15 +323,19 @@
 
                     <div class="metric-card primary-metric">
                         <div class="metric-top">
-                            <span>Total Portfolio Value</span>
+                            <span><%= isPartialPortfolio ? "Verified Holdings Subtotal" : "Total Portfolio Value" %></span>
                             <span class="metric-icon">₹</span>
                         </div>
 
                         <h2>
-                            <%= formatCurrency(safeAnalytics.total_value ?? totalValue) %>
+                            <%= formatCurrency(totalValue) %>
                         </h2>
 
-                        <small>Based on consolidated holdings</small>
+                        <small>
+                            <%= isPartialPortfolio
+                                ? "Partial value only — some holdings need verification"
+                                : "Based on the selected account's current statements" %>
+                        </small>
                     </div>
 
 

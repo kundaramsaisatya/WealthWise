@@ -132,6 +132,15 @@ const portfolioSchema = new mongoose.Schema({
         default: "INR"
     },
 
+    // Explicit account-holder identity extracted from statement metadata.
+    // Used to prevent unrelated people's statements being consolidated.
+    accountHolder: {
+        type: String,
+        default: null,
+        trim: true,
+        maxlength: 120
+    },
+
     totalValue: {
         type: Number,
         required: true,
