@@ -44,7 +44,7 @@ AGGREGATION_KEYWORDS = [
     "average", "maximum", "minimum",
     "largest", "smallest", "highest", "lowest",
     "biggest", "best", "worst",
-    "rank", "ranking", "list all", "all funds", "all holdings",
+    "rank", "ranking", "all funds",
     "portfolio value", "current value", "invested", "invested value",
     "net worth", "p&l", "profit", "profits", "loss", "losses",
     "return", "returns", "gain", "gains",
@@ -63,6 +63,58 @@ _AGGREGATION_PATTERN = re.compile(
 
 def is_aggregation_question(question):
     return bool(_AGGREGATION_PATTERN.search((question or "").lower()))
+
+
+LISTING_PATTERNS = (
+    r"\\blist\\s+all\\b",
+    r"\\bshow\\s+all\\b",
+    r"\\ball\\s+(?:investment|holding|fund)\\s+names?\\b",
+    r"\\b(?:investment|holding|fund)\\s+names?\\b",
+    r"\\bwhich\\s+(?:investments|holdings|funds)\\b",
+)
+
+
+def is_listing_question(question):
+    text = (question or "").lower()
+    return any(re.search(pattern, text) for pattern in LISTING_PATTERNS)
+
+
+def build_holding_list_answer(calculation_data):
+    holdings = calculation_data.get("holdings") or []
+    if not holdings:
+        return None
+
+    name_counts = {}
+    for holding in holdings:
+        name = str(holding.get("name") or "").strip()
+        if name:
+            name_counts[name] = name_counts.get(name, 0) + 1
+
+    if not name_counts:
+        return None
+
+    duplicate_names = {name for name, count in name_counts.items() if count > 1}
+    lines = []
+    for index, holding in enumerate(holdings, start=1):
+        name = str(holding.get("name") or "").strip()
+        if not name:
+            continue
+        folio = holding.get("folio_number")
+        label = f"{name} (Folio: {folio})" if name in duplicate_names and folio else name
+        lines.append(f"{len(lines) + 1}. {label}")
+
+    if not lines:
+        return None
+
+    report_date = (
+        (calculation_data.get("consolidation") or {}).get("report_date")
+        or "date unavailable"
+    )
+    return (
+        f" I found {len(lines)} investment records in your uploaded "
+        f"structured reports (as of {report_date}):\\n"
+        + "\\n".join(lines)
+    )
 
 
 # --------------------------------------------------
@@ -604,6 +656,18 @@ def generate_answer(
 ):
 
     numerical_question = is_aggregation_question(question)
+
+    # A complete structured holding list is a deterministic lookup, not
+    # a numerical aggregation. This works for PDF and Excel reports.
+    if is_listing_question(question) and calculation_data is not None:
+        answer = build_holding_list_answer(calculation_data)
+        if answer:
+            return {
+                "answer": answer,
+                "sources": _report_sources(calculation_data),
+                "calculation_used": True,
+                "retrieved_chunks": 0,
+            }
 
     # Safety net: never let the model total partial rows.
     if numerical_question and calculation_data is None:
