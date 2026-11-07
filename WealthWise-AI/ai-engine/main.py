@@ -181,6 +181,9 @@ def load_all_portfolio_holdings(client_id: str):
         documents.append({
             "document_id": data.get("document_id"),
             "filename": data.get("filename"),
+            "document_type": data.get("document_type", "excel"),
+            "currency": data.get("currency"),
+            "total_value": data.get("total_value"),
             "record_count": len(holdings),
             "report_date": data.get("report_date"),
             "saved_at": data.get("saved_at"),
@@ -283,16 +286,18 @@ def consolidate_holdings(holdings: list, documents: list):
     return consolidated, info
 
 
-def load_latest_portfolio(client_id: str):
+def load_latest_portfolio(client_id: str, document_type: str | None = None):
     """
-    Return (holdings, documents, consolidation_info) for the client's
-    newest valuation date.
-
-    Every document with that date is merged (statements from different
-    sources describe one portfolio), duplicates are counted once, and
-    older dates are ignored so months are never added together.
+    Return the newest snapshot, optionally restricted to one document type.
+    This prevents a PDF-specific question from silently using Excel records.
     """
     holdings, documents = load_all_portfolio_holdings(client_id)
+
+    if document_type:
+        documents = [
+            d for d in documents
+            if (d.get("document_type") or "").lower() == document_type.lower()
+        ]
 
     if not documents:
         return [], [], {}
@@ -871,10 +876,14 @@ def chat(request: ChatRequest):
                 detail="Upload a document before asking questions.",
             )
 
-        # Newest valuation date only; every document with that date is
-        # merged and duplicates are counted once.
+        # If the user explicitly asks about a PDF, scope structured
+        # holdings to the newest PDF report instead of mixing Excel data.
+        asks_about_pdf = bool(re.search(r"\\bpdf\\b", request.question, re.IGNORECASE))
+        requested_document_type = "pdf" if asks_about_pdf else None
+
         holdings, documents, consolidation = load_latest_portfolio(
-            request.client_id
+            request.client_id,
+            document_type=requested_document_type,
         )
 
         calculation_data = None
@@ -910,6 +919,7 @@ def chat(request: ChatRequest):
             vector_store,
             top_k=8,
             calculation_data=calculation_data,
+            document_type_filter=requested_document_type,
         )
 
         return {
