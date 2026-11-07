@@ -725,6 +725,7 @@ async def upload_document(
             {
                 "document_id": document_id,
                 "filename": original_filename,
+                "document_type": "excel",
                 "report_date": report_date,
                 "currency": "INR",
                 "holdings": all_holdings,
@@ -878,7 +879,7 @@ def chat(request: ChatRequest):
 
         # If the user explicitly asks about a PDF, scope structured
         # holdings to the newest PDF report instead of mixing Excel data.
-        asks_about_pdf = bool(re.search(r"\\bpdf\\b", request.question, re.IGNORECASE))
+        asks_about_pdf = bool(re.search(r"\bpdf\b", request.question, re.IGNORECASE))
         requested_document_type = "pdf" if asks_about_pdf else None
 
         holdings, documents, consolidation = load_latest_portfolio(
