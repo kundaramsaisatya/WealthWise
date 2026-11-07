@@ -16,6 +16,7 @@ from groq import (
 )
 
 from document_processor import extract_text_from_pdf
+from cams_cas_extractor import extract_cams_cas
 
 
 # ==================================================
@@ -772,6 +773,19 @@ def extract_portfolio_from_pdf(file_path):
         raise ValueError(
             "No readable text found in PDF."
         )
+
+    # CAMS/KFintech CAS tables have stable, labelled columns. Parse them
+    # deterministically before using an LLM, preserving exact ISINs,
+    # fractional units, NAV and market values.
+    cas_result = extract_cams_cas(pages)
+    if cas_result is not None:
+        normalized_holdings = [
+            normalize_holding(holding)
+            for holding in cas_result["holdings"]
+        ]
+        cas_result["holdings"] = normalized_holdings
+        print("DETERMINISTIC CAS EXTRACTION:", len(normalized_holdings), flush=True)
+        return cas_result
 
     batches = create_page_batches(
         pages,
