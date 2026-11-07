@@ -17,6 +17,18 @@
     const safeConflicts =
         Array.isArray(conflicts) ? conflicts : [];
 
+    // The dashboard can also render on fallback/error paths where the
+    // server has not supplied accountSelection.
+    const safeAccountSelection =
+        typeof accountSelection !== "undefined" && accountSelection
+            ? {
+                activeAccountHolder: accountSelection.activeAccountHolder || null,
+                excludedDocuments: Array.isArray(accountSelection.excludedDocuments)
+                    ? accountSelection.excludedDocuments
+                    : []
+            }
+            : { activeAccountHolder: null, excludedDocuments: [] };
+
     const portfolioHoldings = Array.isArray(safePortfolio.holdings)
         ? safePortfolio.holdings
         : [];
