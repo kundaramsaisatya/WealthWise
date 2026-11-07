@@ -213,8 +213,39 @@ function getHoldingKey(holding, snapshot) {
 
 function consolidatePortfolios(allPortfolios) {
 
-    const actualSnapshots = allPortfolios
+    const nonDemoSnapshots = allPortfolios
         .filter(snapshot => !isDemoDocument(snapshot));
+
+    const datedSnapshots = nonDemoSnapshots
+        .filter(snapshot => getSnapshotDate(snapshot).getTime() > 0);
+
+    const latestSnapshotDate = datedSnapshots.length
+        ? Math.max(...datedSnapshots.map(snapshot => getSnapshotDate(snapshot).getTime()))
+        : null;
+
+    // A current portfolio is built from statements for the same valuation
+    // window. Older statements remain available to historical performance,
+    // but must not silently contribute positions to today's balance.
+    const SNAPSHOT_DATE_TOLERANCE_DAYS = 7;
+    const snapshotCutoff = latestSnapshotDate === null
+        ? null
+        : latestSnapshotDate - SNAPSHOT_DATE_TOLERANCE_DAYS * 24 * 60 * 60 * 1000;
+
+    const actualSnapshots = latestSnapshotDate === null
+        ? nonDemoSnapshots
+        : datedSnapshots.filter(snapshot =>
+            getSnapshotDate(snapshot).getTime() >= snapshotCutoff &&
+            getSnapshotDate(snapshot).getTime() <= latestSnapshotDate
+        );
+
+    const excludedSnapshots = nonDemoSnapshots
+        .filter(snapshot => !actualSnapshots.includes(snapshot))
+        .map(snapshot => ({
+            documentName: snapshot.documentName || "Unknown document",
+            accountHolder: snapshot.accountHolder || null,
+            reportDate: snapshot.reportDate || null,
+            reason: "Statement is outside the current 7-day valuation window."
+        }));
 
     const groups = new Map();
 
@@ -390,7 +421,8 @@ function consolidatePortfolios(allPortfolios) {
 
         duplicateRecords,
         conflicts,
-        actualSnapshots
+        actualSnapshots,
+        excludedSnapshots
     };
 }
 
@@ -615,6 +647,8 @@ app.get("/", requireAuth, async (req, res) => {
         const consolidated = consolidatePortfolios(allPortfolios);
         const portfolio = consolidated.portfolio;
         portfolio.accountHolder = accountSelection.activeAccountHolder;
+        portfolio.excludedAccountDocuments = accountSelection.excludedDocuments;
+        accountSelection.excludedDocuments.push(...(consolidated.excludedSnapshots || []));
         portfolio.excludedAccountDocuments = accountSelection.excludedDocuments;
 
         if (portfolio.holdings.length === 0) {
