@@ -652,7 +652,8 @@ def generate_answer(
     question,
     vector_store,
     top_k=8,
-    calculation_data=None
+    calculation_data=None,
+    document_type_filter=None,
 ):
 
     numerical_question = is_aggregation_question(question)
@@ -674,9 +675,10 @@ def generate_answer(
         return {
             "answer": (
                 "I can't give a reliable portfolio-wide figure yet because "
-                "complete structured data isn't available for your "
-                "uploaded report. Please upload the Excel statement and "
-                "try again."
+                "complete structured data isn't available for the relevant "
+                "uploaded report. Please check that the PDF or Excel "
+                "statement was processed successfully and re-upload it if "
+                "structured holdings are missing."
             ),
             "sources": [],
             "calculation_used": False,
@@ -722,7 +724,8 @@ def generate_answer(
     # Retrieve relevant chunks.
     results = vector_store.search(
         question,
-        top_k=top_k
+        top_k=top_k,
+        document_type=document_type_filter,
     )
 
     context_parts = []

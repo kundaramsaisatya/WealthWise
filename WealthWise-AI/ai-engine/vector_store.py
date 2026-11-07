@@ -233,7 +233,7 @@ class VectorStore:
         print("Total document chunks:", self.index.ntotal)
         print("Embedding dimension:", self.index.d)
 
-    def search(self, query, top_k=3):
+    def search(self, query, top_k=3, document_type=None):
 
         if not isinstance(query, str) or not query.strip():
             return []
@@ -244,11 +244,17 @@ class VectorStore:
         if not isinstance(top_k, int) or top_k <= 0:
             return []
 
-        # Generate embedding for the user's question
+        # Generate embedding for the user's question.
         query_embedding = self.create_embeddings([query])
 
-        # Search FAISS index
-        results_count = min(top_k, self.index.ntotal)
+        # When a document type is requested, search the full index and
+        # filter by metadata before selecting top results. Searching only
+        # the global top_k first could return unrelated Excel chunks and
+        # hide relevant PDF pages.
+        if document_type:
+            results_count = self.index.ntotal
+        else:
+            results_count = min(top_k, self.index.ntotal)
 
         scores, indices = self.index.search(
             query_embedding,
@@ -264,8 +270,16 @@ class VectorStore:
 
             document = self.documents[index_position].copy()
 
-            document["similarity"] = float(score)
+            if document_type and (
+                str(document.get("document_type", "")).lower()
+                != document_type.lower()
+            ):
+                continue
 
+            document["similarity"] = float(score)
             results.append(document)
+
+            if len(results) >= top_k:
+                break
 
         return results
