@@ -28,14 +28,22 @@ def extract_cams_cas(pages):
         return None
 
     holder = None
+    # Use ordinary extracted text for identity. Layout mode can merge the
+    # investor column with the explanatory right column into a long line.
+    excluded_starters = {"the", "if", "this", "please", "email", "phone", "mobile"}
     for page in pages:
-        for line in page_text(page).splitlines():
-            candidate = line.strip()
-            if candidate and re.fullmatch(r"[A-Z][A-Za-z.' -]+(?:\s+[A-Z][A-Za-z.' -]+){1,5}", candidate):
-                if not any(token in candidate.lower() for token in ("consolidated account", "loads and fees")):
-                    # The investor name is printed before the address block.
-                    holder = candidate
-                    break
+        for line in page.get("text", "").splitlines():
+            candidate = " ".join(line.strip().split())
+            if not candidate or len(candidate) > 80:
+                continue
+            words = candidate.split()
+            if not 2 <= len(words) <= 6:
+                continue
+            if words[0].casefold() in excluded_starters:
+                continue
+            if re.fullmatch(r"[A-Z][A-Za-z.'-]*(?:\\s+[A-Z][A-Za-z.'-]*){1,5}", candidate):
+                holder = candidate
+                break
         if holder:
             break
 
