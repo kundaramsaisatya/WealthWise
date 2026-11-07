@@ -41,6 +41,13 @@ def extract_cams_cas(pages):
             candidate = " ".join(line.strip().split())
             if not candidate or len(candidate) > 80:
                 continue
+            # The document title is title-cased too, so exclude it explicitly
+            # rather than treating it as the investor's name.
+            if candidate.casefold() in {
+                "consolidated account summary",
+                "loads and fees",
+            }:
+                continue
             words = candidate.split()
             if not 2 <= len(words) <= 6:
                 continue
