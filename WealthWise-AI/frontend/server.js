@@ -843,6 +843,8 @@ app.get("/performance", requireAuth, async (req, res) => {
         return res.json({
             performance: response.data.performance,
             skipped_dates: skippedDates,
+            account_holder: accountSelection.activeAccountHolder,
+            excluded_account_documents: accountSelection.excludedDocuments,
             source: "MongoDB Portfolio records"
         });
 
