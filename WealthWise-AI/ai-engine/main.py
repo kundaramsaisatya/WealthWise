@@ -757,6 +757,7 @@ async def upload_document(
             "status": "ready",
             "document_type": "excel",
             "report_date": report_date,
+            "account_holder": extracted_data.get("account_holder"),
             "sheets": extracted_data.get("sheets", {}),
         }
 
