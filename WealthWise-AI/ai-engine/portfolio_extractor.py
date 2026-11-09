@@ -17,6 +17,7 @@ from groq import (
 
 from document_processor import extract_text_from_pdf
 from cams_cas_extractor import extract_cams_cas
+from portfolio_reconciliation import classify_statement_type
 
 
 # ==================================================
@@ -789,6 +790,7 @@ def extract_portfolio_from_pdf(file_path):
     # fractional units, NAV and market values.
     cas_result = extract_cams_cas(pages)
     if cas_result is not None:
+        cas_result["statement_type"] = "cas"
         normalized_holdings = [
             normalize_holding(holding)
             for holding in cas_result["holdings"]
@@ -925,6 +927,10 @@ def extract_portfolio_from_pdf(file_path):
         "total_value": total_value,
         "report_date": report_date,
         "account_holder": account_holder,
+        "statement_type": classify_statement_type(
+            os.path.basename(file_path),
+            "\\n".join(page.get("text", "") for page in pages),
+        ),
         "holdings": normalized_holdings,
     }
 
