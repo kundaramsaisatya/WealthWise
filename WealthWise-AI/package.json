@@ -7,7 +7,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "npm run test:account-holder && npm run test:portfolio-quality && npm run test:financial-engines && npm run test:account-holder-isolation && npm run test:account-holder-selection && npm run test:portfolio-reconciliation",
+    "test": "npm run test:account-holder && npm run test:portfolio-quality && npm run test:financial-engines && npm run test:account-holder-isolation && npm run test:account-holder-selection && npm run test:portfolio-reconciliation && npm run test:excel-currency",
     "start": "node frontend/server.js",
     "dev": "nodemon frontend/server.js",
     "test:account-holder": "python -m unittest discover -s ai-engine -p test_account_holder.py",
@@ -15,7 +15,8 @@
     "test:financial-engines": "python -m unittest discover -s ai-engine -p test_financial_engines.py",
     "test:account-holder-isolation": "node --test frontend/test-account-holder-isolation.js",
     "test:account-holder-selection": "python -m unittest discover -s ai-engine -p test_account_holder_selection.py",
-    "test:portfolio-reconciliation": "python -m unittest discover -s ai-engine -p test_portfolio_reconciliation.py"
+    "test:portfolio-reconciliation": "python -m unittest discover -s ai-engine -p test_portfolio_reconciliation.py",
+    "test:excel-currency": "python -m unittest discover -s ai-engine -p test_excel_currency.py"
   },
   "keywords": [],
   "author": "",
