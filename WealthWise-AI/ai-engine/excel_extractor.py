@@ -973,7 +973,7 @@ def extract_workbook_currency(workbook):
                 or re.search(r"\b(?:INR|RUPEES?)\b", row_text)
                 or (
                     has_value_context
-                    and re.search(r"\bRS\.?\b", row_text)
+                    and re.search(r"\bRS\.?\s*(?=\d)", row_text)
                 )
             )
             if explicit_inr:
