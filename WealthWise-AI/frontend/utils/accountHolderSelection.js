@@ -3,7 +3,7 @@ function normalizeAccountHolder(value) {
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, " ")
-        .replace(/\\s+/g, " ");
+        .replace(/\s+/g, " ");
 }
 
 function getSnapshotDate(snapshot) {
