@@ -164,7 +164,7 @@ def _hard_flags(holding: dict[str, Any]) -> list[str]:
     """Flags that make a row unreliable as a source of truth."""
     flags = []
     qty, nav, value = (_num(holding.get(k)) for k in ("quantity", "current_nav", "current_value"))
-    if qty and nav and value is not None:
+    if qty is not None and nav is not None and value is not None:
         expected = qty * nav
         if abs(expected - value) > max(ABS_TOLERANCE, VALUE_TOLERANCE_PCT * abs(value)):
             flags.append("units_x_nav_mismatch")

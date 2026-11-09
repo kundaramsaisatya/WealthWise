@@ -940,9 +940,55 @@ def extract_folio_metadata(workbook):
 
 
 # --------------------------------------------------
-# MAIN EXCEL EXTRACTION FUNCTION
+# --------------------------------------------------
+# WORKBOOK CURRENCY
 # --------------------------------------------------
 
+def extract_workbook_currency(workbook):
+    """Detect an explicit currency code or rupee marker in workbook metadata."""
+    supported = {"INR", "USD", "EUR", "GBP", "JPY", "CAD", "AUD", "SGD", "CHF", "AED"}
+    detected = set()
+
+    for sheet_name in workbook.sheet_names:
+        try:
+            metadata = pd.read_excel(
+                workbook, sheet_name=sheet_name, header=None,
+                nrows=30, dtype=object
+            )
+        except Exception:
+            continue
+
+        for _, row in metadata.iterrows():
+            row_text = " ".join(
+                str(value) for value in row.tolist() if pd.notna(value)
+            ).upper()
+            has_currency_label = "CURRENCY" in row_text
+            has_value_context = any(
+                token in row_text
+                for token in ("MARKET VALUE", "CURRENT VALUE", "INVESTED VALUE",
+                              "AMOUNT", "NAV", "PRICE", "VALUATION")
+            )
+            explicit_inr = (
+                "₹" in row_text
+                or re.search(r"\b(?:INR|RUPEES?)\b", row_text)
+                or (
+                    has_value_context
+                    and re.search(r"\bRS\.?\s*(?=\d)", row_text)
+                )
+            )
+            if explicit_inr:
+                detected.add("INR")
+            if has_currency_label or has_value_context:
+                for code in supported - {"INR"}:
+                    if re.search(rf"\b{code}\b", row_text):
+                        detected.add(code)
+
+    return next(iter(detected)) if len(detected) == 1 else None
+
+
+# --------------------------------------------------
+# MAIN EXCEL EXTRACTION FUNCTION
+# --------------------------------------------------
 def extract_excel(file_path):
 
     extracted_data = {}
@@ -952,6 +998,7 @@ def extract_excel(file_path):
 
         account_holder = extract_workbook_account_holder(workbook)
         folio_metadata = extract_folio_metadata(workbook)
+        currency = extract_workbook_currency(workbook)
 
         for sheet_name in workbook.sheet_names:
 
@@ -989,6 +1036,7 @@ def extract_excel(file_path):
     return {
         "report_date": report_date,
         "account_holder": account_holder,
+        "currency": currency,
         "folio_metadata": folio_metadata,
         "sheets": extracted_data
     }
