@@ -7,7 +7,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "npm run test:chat-portfolio && npm run test:upload-validation && npm run test:account-holder && npm run test:portfolio-quality && npm run test:financial-engines && npm run test:account-holder-isolation && npm run test:account-holder-selection && npm run test:portfolio-reconciliation && npm run test:excel-currency && npm run test:security && npm run test:rate-limiter",
+    "test": "npm run test:api-error-disclosure && npm run test:chat-portfolio && npm run test:upload-validation && npm run test:account-holder && npm run test:portfolio-quality && npm run test:financial-engines && npm run test:account-holder-isolation && npm run test:account-holder-selection && npm run test:portfolio-reconciliation && npm run test:excel-currency && npm run test:security && npm run test:rate-limiter",
     "start": "node frontend/server.js",
     "dev": "nodemon frontend/server.js",
     "test:account-holder": "python -m unittest discover -s ai-engine -p test_account_holder.py",
@@ -20,7 +20,8 @@
     "test:security": "node --test frontend/test-security.js",
     "test:rate-limiter": "node --test frontend/test-rate-limiter.js",
     "test:upload-validation": "python -m unittest discover -s ai-engine -p test_upload_validation.py",
-    "test:chat-portfolio": "python -m unittest discover -s ai-engine -p test_chat_portfolio.py"
+    "test:chat-portfolio": "python -m unittest discover -s ai-engine -p test_chat_portfolio.py",
+    "test:api-error-disclosure": "python -m unittest discover -s ai-engine -p test_api_error_disclosure.py"
   },
   "keywords": [],
   "author": "",
