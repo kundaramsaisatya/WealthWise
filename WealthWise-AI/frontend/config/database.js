@@ -28,7 +28,6 @@ async function connectDB() {
 
         const hosts = records.map(record => `${record.target}:${record.port}`);
 
-        console.log("MongoDB hosts discovered:", hosts);
 
         // Build a standard MongoDB connection string
         const username = encodeURIComponent(
@@ -45,7 +44,7 @@ async function connectDB() {
         const connectionString =
             `mongodb://${username}:${password}@${hosts.join(",")}${database}${searchParams}`;
 
-        mongoose.set("debug", true);
+        mongoose.set("debug", false);
         await mongoose.connect(connectionString, {
             tls: true,
             authSource: "admin",
@@ -59,8 +58,7 @@ async function connectDB() {
         return mongoose.connection.getClient();
 
     } catch (error) {
-        console.error("MongoDB connection failed:");
-        console.dir(error, { depth: 6 });
+        console.error("MongoDB connection failed:", error.message);
         throw error;
     }
 }
