@@ -32,6 +32,7 @@ from risk_explainer import generate_risk_explanation
 from document_processor import process_pdf
 from vector_store import VectorStore
 from rag import generate_answer, is_listing_question
+from account_holder_selection import select_account_holder_documents
 
 
 # --------------------------------------------------
@@ -306,27 +307,7 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
         return [], [], {}
 
     all_documents_before_account_filter = list(documents)
-    identified_documents = [
-        d for d in documents
-        if isinstance(d.get("account_holder"), str)
-        and d["account_holder"].strip()
-    ]
-
-    active_account_holder = None
-    if identified_documents:
-        latest_identity_document = max(
-            identified_documents,
-            key=lambda d: (d.get("report_date") or "", d.get("saved_at") or ""),
-        )
-        active_account_holder = " ".join(
-            latest_identity_document["account_holder"].strip().casefold().split()
-        )
-        documents = [
-            d for d in documents
-            if " ".join(
-                str(d.get("account_holder") or "").strip().casefold().split()
-            ) == active_account_holder
-        ]
+    documents, active_account_holder = select_account_holder_documents(documents)
 
     if not documents:
         return [], [], {}
