@@ -6,9 +6,6 @@ from portfolio_analytics import normalize_asset_class
 STALE_DOCUMENT_DAYS = 365
 MIN_HISTORY_DAYS = 365
 
-# Severity of each portfolio-level issue type. Historical coverage is
-# "Low" because a single uploaded statement can never provide history;
-# it signals uncertainty, not a problem with the portfolio.
 ISSUE_SEVERITY = {
     "Cost Basis": "Medium",
     "Sector Information": "Low",
@@ -23,57 +20,41 @@ ISSUE_SEVERITY = {
 def parse_date(value):
     if not value:
         return None
-
     if isinstance(value, datetime):
-        return (
-            value.replace(tzinfo=timezone.utc)
-            if value.tzinfo is None
-            else value
-        )
-
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
     try:
-        parsed = datetime.fromisoformat(
-            str(value).replace("Z", "+00:00")
-        )
-
-        return (
-            parsed.replace(tzinfo=timezone.utc)
-            if parsed.tzinfo is None
-            else parsed
-        )
-
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
     except (ValueError, TypeError):
         return None
 
 
-def analyze_data_quality(
-    portfolio,
-    history_records=None,
-    as_of_date=None
-):
+def _normalized_identifier(value):
+    return "".join(str(value or "").strip().upper().split())
+
+
+def _normalized_name(value):
+    return " ".join(str(value or "").strip().casefold().split())
+
+
+def analyze_data_quality(portfolio, history_records=None, as_of_date=None):
     if not isinstance(portfolio, dict):
         raise ValueError("Invalid portfolio data.")
 
     holdings = portfolio.get("holdings", [])
-
     if not isinstance(holdings, list):
         raise ValueError("Invalid holdings data.")
+    if any(not isinstance(holding, dict) for holding in holdings):
+        raise ValueError("Invalid holding record in data-quality analysis.")
 
     now = parse_date(as_of_date) or datetime.now(timezone.utc)
-
-    history_records = history_records or []
-
+    history_records = [] if history_records is None else history_records
     if not isinstance(history_records, list):
         raise ValueError("Invalid history records.")
 
-    portfolio_report_date = (
-        portfolio.get("report_date")
-        or portfolio.get("reportDate")
-    )
-
+    portfolio_report_date = portfolio.get("report_date") or portfolio.get("reportDate")
     issues = []
     holding_results = []
-
     total_holdings = len(holdings)
 
     missing_cost_basis = 0
@@ -83,17 +64,11 @@ def analyze_data_quality(
     missing_report_date = 0
     stale_holdings = 0
     insufficient_history = 0
-
     complete_documents = 0
     sufficient_history_count = 0
 
     for holding in holdings:
-
-        if not isinstance(holding, dict):
-            continue
-
-        name = holding.get("name", "Unknown Holding")
-
+        name = holding.get("name") or "Unknown Holding"
         document_issues = []
         history_issues = []
         freshness_issues = []
@@ -103,23 +78,17 @@ def analyze_data_quality(
             document_issues.append("Missing cost basis")
 
         sector_value = holding.get("sector")
-
-        if not sector_value or str(
-            sector_value
-        ).strip().lower() in ("unknown", "n/a"):
+        if not sector_value or str(sector_value).strip().lower() in ("unknown", "n/a"):
             missing_sector += 1
             document_issues.append("Missing sector information")
 
-        # Use the same classifier as portfolio analytics. This keeps
-        # data-quality reporting consistent with the asset allocation.
         if normalize_asset_class(holding.get("asset_class")) == "Unclassified":
             unknown_asset_class += 1
             document_issues.append("Unknown asset classification")
 
-        if not (
-            holding.get("isin")
-            or holding.get("folio_number")
-        ):
+        isin = _normalized_identifier(holding.get("isin"))
+        folio = _normalized_identifier(holding.get("folio_number"))
+        if not (isin or folio):
             missing_identifier += 1
             document_issues.append("Missing instrument identifier")
 
@@ -128,66 +97,50 @@ def analyze_data_quality(
             or holding.get("reportDate")
             or portfolio_report_date
         )
-
         if report_date is None:
             missing_report_date += 1
             document_issues.append("Report date unavailable")
         else:
-            age_days = max(
-                0,
-                (now - report_date).days
-            )
-
+            age_days = max(0, (now - report_date).days)
             if age_days > STALE_DOCUMENT_DAYS:
                 stale_holdings += 1
                 freshness_issues.append("Stale portfolio data")
 
         matching_history = []
-
         for record in history_records:
-
             if not isinstance(record, dict):
                 continue
-
-            if holding.get("isin"):
+            record_isin = _normalized_identifier(record.get("isin"))
+            record_folio = _normalized_identifier(record.get("folio_number"))
+            if isin:
+                matches = record_isin == isin and (
+                    not folio or record_folio == folio
+                )
+            elif folio:
                 matches = (
-                    record.get("isin") == holding.get("isin")
+                    record_folio == folio
+                    and _normalized_name(record.get("name")) == _normalized_name(name)
                 )
             else:
-                matches = (
-                    record.get("name") == name
-                )
-
+                matches = _normalized_name(record.get("name")) == _normalized_name(name)
             if matches:
                 matching_history.append(record)
 
-        history_dates = []
+        history_dates = [
+            parsed for parsed in (
+                parse_date(record.get("date") or record.get("report_date"))
+                for record in matching_history
+            ) if parsed is not None
+        ]
 
-        for record in matching_history:
+        history_days = (
+            (max(history_dates) - min(history_dates)).days
+            if len(history_dates) >= 2 else None
+        )
 
-            date = parse_date(
-                record.get("date")
-                or record.get("report_date")
-            )
-
-            if date:
-                history_dates.append(date)
-
-        history_days = None
-
-        if len(history_dates) >= 2:
-            history_days = (
-                max(history_dates) - min(history_dates)
-            ).days
-
-        if (
-            history_days is None
-            or history_days < MIN_HISTORY_DAYS
-        ):
+        if history_days is None or history_days < MIN_HISTORY_DAYS:
             insufficient_history += 1
-            history_issues.append(
-                "Insufficient historical data"
-            )
+            history_issues.append("Insufficient historical data")
         else:
             sufficient_history_count += 1
 
@@ -200,31 +153,18 @@ def analyze_data_quality(
             "document_issues": document_issues,
             "history_issues": history_issues,
             "freshness_issues": freshness_issues,
-            "document_status": (
-                "Complete"
-                if not document_issues
-                else "Needs Review"
-            ),
-            "history_status": (
-                "Sufficient"
-                if not history_issues
-                else "Insufficient History"
-            )
+            "document_status": "Complete" if not document_issues else "Needs Review",
+            "history_status": "Sufficient" if not history_issues else "Insufficient History"
         })
 
-    if total_holdings:
-        document_completeness = round(
-            complete_documents / total_holdings * 100,
-            2
-        )
-
-        historical_coverage = round(
-            sufficient_history_count / total_holdings * 100,
-            2
-        )
-    else:
-        document_completeness = 0
-        historical_coverage = 0
+    document_completeness = (
+        round(complete_documents / total_holdings * 100, 2)
+        if total_holdings else 0
+    )
+    historical_coverage = (
+        round(sufficient_history_count / total_holdings * 100, 2)
+        if total_holdings else 0
+    )
 
     issue_counts = {
         "Cost Basis": missing_cost_basis,
@@ -235,7 +175,6 @@ def analyze_data_quality(
         "Data Freshness": stale_holdings,
         "Historical Coverage": insufficient_history
     }
-
     messages = {
         "Cost Basis": "Some holdings have no recorded cost basis.",
         "Sector Information": "Sector exposure cannot be fully evaluated.",
@@ -250,7 +189,6 @@ def analyze_data_quality(
     }
 
     for issue_type, count in issue_counts.items():
-
         if count:
             issues.append({
                 "type": issue_type,
