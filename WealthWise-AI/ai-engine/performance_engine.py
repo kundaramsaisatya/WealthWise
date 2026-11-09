@@ -1,10 +1,10 @@
-
+import math
 from datetime import datetime
 from typing import Any
 
 
 def parse_report_date(value: Any):
-    """Convert a report date into a date object."""
+    """Convert an ISO report date or datetime into a date object."""
     if not value:
         return None
 
@@ -12,8 +12,10 @@ def parse_report_date(value: Any):
         return value.date()
 
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
-    except (ValueError, TypeError):
+        return datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        ).date()
+    except (ValueError, TypeError, OverflowError):
         return None
 
 
@@ -22,13 +24,14 @@ def calculate_portfolio_performance(snapshots: list):
     Calculate changes in portfolio value across dated snapshots.
 
     These are portfolio value changes, not time-weighted returns or XIRR.
+    External deposits and withdrawals are not adjusted.
     """
-
     if not isinstance(snapshots, list) or not snapshots:
         return {
             "status": "insufficient_data",
             "message": "No historical portfolio snapshots available.",
             "snapshot_count": 0,
+            "rejected_snapshots": [],
             "history": [],
             "summary": None
         }
@@ -36,21 +39,43 @@ def calculate_portfolio_performance(snapshots: list):
     valid_snapshots = []
     rejected_snapshots = []
 
-    for snapshot in snapshots:
-        report_date = parse_report_date(snapshot.get("report_date"))
-        total_value = snapshot.get("total_value")
-
-        try:
-            total_value = float(total_value)
-        except (ValueError, TypeError):
+    for index, snapshot in enumerate(snapshots):
+        if not isinstance(snapshot, dict):
             rejected_snapshots.append({
-                "reason": "Invalid portfolio value"
+                "index": index,
+                "reason": "Snapshot must be an object"
             })
             continue
 
-        if report_date is None or total_value < 0:
+        report_date = parse_report_date(snapshot.get("report_date"))
+        raw_value = snapshot.get("total_value")
+
+        if isinstance(raw_value, bool):
+            total_value = None
+        else:
+            try:
+                total_value = float(raw_value)
+            except (ValueError, TypeError, OverflowError):
+                total_value = None
+
+        if total_value is None or not math.isfinite(total_value):
             rejected_snapshots.append({
-                "reason": "Invalid report date or negative portfolio value"
+                "index": index,
+                "reason": "Portfolio value must be a finite number"
+            })
+            continue
+
+        if report_date is None:
+            rejected_snapshots.append({
+                "index": index,
+                "reason": "Invalid or missing report date"
+            })
+            continue
+
+        if total_value < 0:
+            rejected_snapshots.append({
+                "index": index,
+                "reason": "Portfolio value cannot be negative"
             })
             continue
 
@@ -59,10 +84,8 @@ def calculate_portfolio_performance(snapshots: list):
             "total_value": total_value
         })
 
-    # Sort snapshots chronologically
     valid_snapshots.sort(key=lambda item: item["date"])
 
-    # Avoid silently choosing between conflicting snapshots on the same date
     dates = [item["date"] for item in valid_snapshots]
 
     if len(dates) != len(set(dates)):
@@ -91,9 +114,8 @@ def calculate_portfolio_performance(snapshots: list):
 
         if previous_value is not None:
             change = snapshot["total_value"] - previous_value
-
             if previous_value > 0:
-                change_percentage = (change / previous_value) * 100
+                change_percentage = change / previous_value * 100
 
         history.append({
             "report_date": snapshot["date"].isoformat(),
@@ -119,14 +141,12 @@ def calculate_portfolio_performance(snapshots: list):
 
     first = valid_snapshots[0]
     latest = valid_snapshots[-1]
-
     absolute_change = latest["total_value"] - first["total_value"]
 
-    percentage_change = None
-    if first["total_value"] > 0:
-        percentage_change = (
-            absolute_change / first["total_value"]
-        ) * 100
+    percentage_change = (
+        absolute_change / first["total_value"] * 100
+        if first["total_value"] > 0 else None
+    )
 
     total_days = (latest["date"] - first["date"]).days
 
