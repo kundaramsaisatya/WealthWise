@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from portfolio_analytics import normalize_asset_class
+
 
 STALE_DOCUMENT_DAYS = 365
 MIN_HISTORY_DAYS = 365
@@ -64,7 +66,6 @@ def analyze_data_quality(
     if not isinstance(history_records, list):
         raise ValueError("Invalid history records.")
 
-    # Portfolio-level report date, used when a holding has none of its own.
     portfolio_report_date = (
         portfolio.get("report_date")
         or portfolio.get("reportDate")
@@ -97,13 +98,10 @@ def analyze_data_quality(
         history_issues = []
         freshness_issues = []
 
-        # Cost basis
         if holding.get("invested_value") is None:
             missing_cost_basis += 1
             document_issues.append("Missing cost basis")
 
-        # Fund sub-categories such as Large Cap and Small Cap are not
-        # business sectors. Only explicitly extracted sector data counts.
         sector_value = holding.get("sector")
 
         if not sector_value or str(
@@ -112,16 +110,12 @@ def analyze_data_quality(
             missing_sector += 1
             document_issues.append("Missing sector information")
 
-        # Asset classification
-        asset_class = str(
-            holding.get("asset_class") or ""
-        ).strip().lower()
-
-        if asset_class in ("", "other", "unknown"):
+        # Use the same classifier as portfolio analytics. This keeps
+        # data-quality reporting consistent with the asset allocation.
+        if normalize_asset_class(holding.get("asset_class")) == "Unclassified":
             unknown_asset_class += 1
             document_issues.append("Unknown asset classification")
 
-        # Instrument identifier
         if not (
             holding.get("isin")
             or holding.get("folio_number")
@@ -129,7 +123,6 @@ def analyze_data_quality(
             missing_identifier += 1
             document_issues.append("Missing instrument identifier")
 
-        # Report date
         report_date = parse_date(
             holding.get("report_date")
             or holding.get("reportDate")
@@ -149,7 +142,6 @@ def analyze_data_quality(
                 stale_holdings += 1
                 freshness_issues.append("Stale portfolio data")
 
-        # Historical coverage
         matching_history = []
 
         for record in history_records:
@@ -199,24 +191,20 @@ def analyze_data_quality(
         else:
             sufficient_history_count += 1
 
-        # Independent document completeness
         if not document_issues:
             complete_documents += 1
 
         holding_results.append({
             "name": name,
             "history_days": history_days,
-
             "document_issues": document_issues,
             "history_issues": history_issues,
             "freshness_issues": freshness_issues,
-
             "document_status": (
                 "Complete"
                 if not document_issues
                 else "Needs Review"
             ),
-
             "history_status": (
                 "Sufficient"
                 if not history_issues
@@ -224,9 +212,7 @@ def analyze_data_quality(
             )
         })
 
-    # Independent percentages
     if total_holdings:
-
         document_completeness = round(
             complete_documents / total_holdings * 100,
             2
@@ -236,12 +222,10 @@ def analyze_data_quality(
             sufficient_history_count / total_holdings * 100,
             2
         )
-
     else:
         document_completeness = 0
         historical_coverage = 0
 
-    # Portfolio-level issues
     issue_counts = {
         "Cost Basis": missing_cost_basis,
         "Sector Information": missing_sector,
@@ -277,15 +261,8 @@ def analyze_data_quality(
 
     return {
         "holding_count": total_holdings,
-
-        "document_completeness_percentage": (
-            document_completeness
-        ),
-
-        "historical_coverage_percentage": (
-            historical_coverage
-        ),
-
+        "document_completeness_percentage": document_completeness,
+        "historical_coverage_percentage": historical_coverage,
         "summary": {
             "missing_cost_basis": missing_cost_basis,
             "missing_sector": missing_sector,
@@ -295,16 +272,12 @@ def analyze_data_quality(
             "stale_holdings": stale_holdings,
             "insufficient_history": insufficient_history
         },
-
         "issues": issues,
-
         "holdings": holding_results,
-
         "thresholds": {
             "stale_document_days": STALE_DOCUMENT_DAYS,
             "minimum_history_days": MIN_HISTORY_DAYS
         },
-
         "interpretation": (
             "Document completeness and historical coverage are "
             "independent measurements. Insufficient history "
