@@ -111,8 +111,16 @@ def analyze_data_quality(portfolio, history_records=None, as_of_date=None):
             if not isinstance(record, dict):
                 continue
             record_isin = _normalized_identifier(record.get("isin"))
+            record_folio = _normalized_identifier(record.get("folio_number"))
             if isin:
-                matches = record_isin == isin
+                matches = record_isin == isin and (
+                    not folio or record_folio == folio
+                )
+            elif folio:
+                matches = (
+                    record_folio == folio
+                    and _normalized_name(record.get("name")) == _normalized_name(name)
+                )
             else:
                 matches = _normalized_name(record.get("name")) == _normalized_name(name)
             if matches:
