@@ -24,7 +24,7 @@ class WorkbookCurrencyTests(unittest.TestCase):
     @patch("excel_extractor.pd.read_excel")
     def test_rejects_conflicting_currency_markers(self, read_excel):
         read_excel.return_value = pd.DataFrame([
-            ["Market Value (INR)"],
+            ["Market Value (INR)", None],
             ["Currency", "USD"],
         ])
         self.assertIsNone(extract_workbook_currency(self.workbook()))
