@@ -3,7 +3,6 @@ import json
 import math
 import re
 import secrets
-import shutil
 import traceback
 import uuid
 
@@ -956,7 +955,7 @@ async def upload_document(
 
         raise HTTPException(
             status_code=500,
-            detail=f"Document processing failed: {str(error)}",
+            detail="Document processing failed. Check server logs for details.",
         )
 
     finally:
