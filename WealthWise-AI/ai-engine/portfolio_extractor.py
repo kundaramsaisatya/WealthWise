@@ -929,7 +929,7 @@ def extract_portfolio_from_pdf(file_path):
         "account_holder": account_holder,
         "statement_type": classify_statement_type(
             os.path.basename(file_path),
-            "\\n".join(page.get("text", "") for page in pages),
+            "\n".join(page.get("text", "") for page in pages),
         ),
         "holdings": normalized_holdings,
     }
