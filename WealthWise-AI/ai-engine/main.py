@@ -3,7 +3,6 @@ import json
 import math
 import re
 import secrets
-import shutil
 import traceback
 import uuid
 
@@ -34,6 +33,9 @@ from vector_store import VectorStore
 from rag import generate_answer, is_listing_question
 from account_holder_selection import select_account_holder_documents
 from portfolio_reconciliation import classify_statement_type, reconcile_portfolio_documents
+from upload_validation import (
+    MAX_UPLOAD_BYTES, UploadTooLargeError, save_upload_limited, validate_uploaded_file,
+)
 
 
 # --------------------------------------------------
@@ -749,22 +751,17 @@ async def upload_document(
     file_path = client_upload_dir / safe_filename
 
     try:
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        try:
+            await save_upload_limited(file, file_path, MAX_UPLOAD_BYTES)
+        except UploadTooLargeError as error:
+            raise HTTPException(status_code=413, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
-        file_size = file_path.stat().st_size
-
-        if file_size == 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Uploaded file is empty.",
-            )
-
-        if file_size > 10 * 1024 * 1024:
-            raise HTTPException(
-                status_code=413,
-                detail="File must be smaller than 10 MB.",
-            )
+        try:
+            validate_uploaded_file(file_path, extension)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
         vector_store = get_client_vector_store(client_id)
 
@@ -958,7 +955,7 @@ async def upload_document(
 
         raise HTTPException(
             status_code=500,
-            detail=f"Document processing failed: {str(error)}",
+            detail="Document processing failed. Check server logs for details.",
         )
 
     finally:
