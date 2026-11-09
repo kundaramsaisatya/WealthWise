@@ -185,6 +185,7 @@ def load_all_portfolio_holdings(client_id: str):
             "document_id": data.get("document_id"),
             "filename": data.get("filename"),
             "document_type": data.get("document_type", "excel"),
+            "statement_type": data.get("statement_type"),
             "currency": data.get("currency"),
             "total_value": data.get("total_value"),
             "record_count": len(holdings),
