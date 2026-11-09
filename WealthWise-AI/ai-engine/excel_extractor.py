@@ -962,14 +962,22 @@ def extract_workbook_currency(workbook):
             row_text = " ".join(
                 str(value) for value in row.tolist() if pd.notna(value)
             ).upper()
-            if "₹" in row_text or re.search(r"\b(?:INR|RS\.?|RUPEES?)\b", row_text):
-                detected.add("INR")
             has_currency_label = "CURRENCY" in row_text
             has_value_context = any(
                 token in row_text
                 for token in ("MARKET VALUE", "CURRENT VALUE", "INVESTED VALUE",
                               "AMOUNT", "NAV", "PRICE", "VALUATION")
             )
+            explicit_inr = (
+                "₹" in row_text
+                or re.search(r"\b(?:INR|RUPEES?)\b", row_text)
+                or (
+                    has_value_context
+                    and re.search(r"\bRS\.?\b", row_text)
+                )
+            )
+            if explicit_inr:
+                detected.add("INR")
             if has_currency_label or has_value_context:
                 for code in supported - {"INR"}:
                     if re.search(rf"\b{code}\b", row_text):
