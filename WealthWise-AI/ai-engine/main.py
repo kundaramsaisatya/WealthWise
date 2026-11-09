@@ -357,6 +357,13 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
     relevant_for_currency = (
         relevant_dates if latest_date else reconciliation_source_docs
     )
+    relevant_for_currency = [
+        document for document in relevant_for_currency
+        if (
+            document.get("statement_type")
+            or classify_statement_type(document.get("filename") or "")
+        ) != "transactions"
+    ]
     known_currencies = {
         str(d.get("currency")).strip().upper()
         for d in relevant_for_currency
