@@ -427,7 +427,10 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
         "reports_used": len(selected),
         "records_before_dedupe": records_before,
         "records_after_dedupe": len(consolidated),
-        "duplicates_removed": max(0, records_before - len(consolidated)),
+        "duplicates_removed": sum(
+            max(0, int(group.get("record_count", 0)) - 1)
+            for group in reconciled.get("duplicate_groups", [])
+        ),
         "valuation_differences": reconciled.get("valuation_differences", []),
         "duplicate_groups": reconciled.get("duplicate_groups", []),
         "flagged_records": reconciled.get("flagged_records", []),
