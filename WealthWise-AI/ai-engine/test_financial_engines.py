@@ -55,6 +55,39 @@ class RiskAndThresholdValidationTests(unittest.TestCase):
         _, profile = resolve_profile({"horizon_years": "2.5"})
         self.assertEqual(profile["horizon_years"], 2.5)
 
+    def test_profile_summary_records_goal_horizon_rule(self):
+        _, profile = resolve_profile({"horizon_years": "2.5"})
+        self.assertEqual(profile["goal_horizon_equity_limit_pct"], 40)
+        self.assertIn(
+            "default portfolio thresholds",
+            profile["used_in_calculation"]
+        )
+        self.assertIn(
+            "illustrative goal-horizon equity exposure rule",
+            profile["used_in_calculation"]
+        )
+
+    def test_profile_summary_records_risk_tolerance_and_custom_overrides(self):
+        _, profile = resolve_profile({
+            "risk_tolerance": "moderate",
+            "thresholds": {"max_equity_pct": 65}
+        })
+        self.assertEqual(
+            profile["used_in_calculation"],
+            [
+                "risk-tolerance profile thresholds",
+                "custom threshold overrides"
+            ]
+        )
+
+    def test_horizons_beyond_configured_rules_are_not_claimed_as_applied(self):
+        _, profile = resolve_profile({"horizon_years": 8})
+        self.assertIsNone(profile["goal_horizon_equity_limit_pct"])
+        self.assertNotIn(
+            "illustrative goal-horizon equity exposure rule",
+            profile["used_in_calculation"]
+        )
+
     def test_rejects_out_of_range_or_unknown_thresholds(self):
         for thresholds in (
             {"max_equity_pct": 101},
