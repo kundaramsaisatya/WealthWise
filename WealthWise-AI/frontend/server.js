@@ -1514,7 +1514,10 @@ app.post("/risk/explanation", requireAuth, async (req, res) => {
             .sort({ reportDate: -1, createdAt: -1 })
             .lean();
 
-        const consolidated = consolidatePortfolios(allPortfolios);
+        // Keep risk analysis aligned with the dashboard: never combine
+        // statements belonging to different account holders.
+        const accountSelection = selectAccountHolderSnapshots(allPortfolios);
+        const consolidated = consolidatePortfolios(accountSelection.snapshots);
 
         if (consolidated.portfolio.holdings.length === 0) {
             return res.status(404).json({
