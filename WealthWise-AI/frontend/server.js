@@ -20,6 +20,7 @@ const Portfolio = require("./models/Portfolio");
 const Document = require("./models/Document");
 const connectDB = require("./config/database");
 const GoalHoldingAllocation = require("./models/GoalHoldingAllocation");
+const { selectAccountHolderSnapshots } = require("./utils/accountHolderSelection");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -124,67 +125,6 @@ function getSnapshotDate(snapshot) {
     return Number.isNaN(parsed.getTime())
         ? new Date(0)
         : parsed;
-}
-
-
-function selectAccountHolderSnapshots(snapshots) {
-    const identified = snapshots.filter(snapshot =>
-        typeof snapshot.accountHolder === "string" &&
-        snapshot.accountHolder.trim()
-    );
-
-    if (identified.length === 0) {
-        // Without an explicitly identified owner, do not combine separate
-        // statements. Keep only the newest single snapshot as a provisional
-        // view; all other documents remain visible as excluded records.
-        const ordered = [...snapshots].sort((a, b) =>
-            getSnapshotDate(b) - getSnapshotDate(a) ||
-            new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
-        );
-        const selected = ordered.length ? [ordered[0]] : [];
-        const excludedDocuments = ordered.slice(1).map(snapshot => ({
-            documentName: snapshot.documentName || "Unknown document",
-            accountHolder: null,
-            reportDate: snapshot.reportDate || null,
-            reason: "Not combined because account-holder identity could not be verified."
-        }));
-
-        return {
-            snapshots: selected,
-            activeAccountHolder: null,
-            excludedDocuments,
-            identityUnverified: snapshots.length > 0
-        };
-    }
-
-    const latestIdentified = [...identified].sort((a, b) =>
-        getSnapshotDate(b) - getSnapshotDate(a) ||
-        new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
-    )[0];
-
-    const activeAccountHolder = latestIdentified.accountHolder.trim();
-    const activeKey = normalizeName(activeAccountHolder);
-
-    const selected = snapshots.filter(snapshot =>
-        normalizeName(snapshot.accountHolder) === activeKey
-    );
-
-    const excludedDocuments = snapshots
-        .filter(snapshot => normalizeName(snapshot.accountHolder) !== activeKey)
-        .map(snapshot => ({
-            documentName: snapshot.documentName || "Unknown document",
-            accountHolder: snapshot.accountHolder || null,
-            reportDate: snapshot.reportDate || null,
-            reason: snapshot.accountHolder
-                ? "Different account holder."
-                : "Account holder could not be verified."
-        }));
-
-    return {
-        snapshots: selected,
-        activeAccountHolder,
-        excludedDocuments
-    };
 }
 
 
@@ -2031,7 +1971,8 @@ app.get("/goals/:id/holdings", requireAuth, async (req, res) => {
         }
 
         const snapshots = await Portfolio.find({ clientId }).lean();
-        const consolidated = consolidatePortfolios(snapshots);
+        const accountSelection = selectAccountHolderSnapshots(snapshots);
+        const consolidated = consolidatePortfolios(accountSelection.snapshots);
 
         const verifiedHoldings = consolidated.portfolio.holdings.filter(
             holding =>
@@ -2186,8 +2127,9 @@ app.put("/goals/:id/allocations", requireAuth, async (req, res) => {
             const snapshots = await Portfolio.find({ clientId })
                 .session(session)
                 .lean();
+            const accountSelection = selectAccountHolderSnapshots(snapshots);
 
-            const consolidated = consolidatePortfolios(snapshots);
+            const consolidated = consolidatePortfolios(accountSelection.snapshots);
 
             const verifiedHoldings = consolidated.portfolio.holdings.filter(
                 holding =>
@@ -2413,8 +2355,9 @@ app.get("/goals/:id/assessment", requireAuth, async (req, res) => {
         const allPortfolios = await Portfolio.find({ clientId })
             .sort({ reportDate: -1, createdAt: -1 })
             .lean();
+        const accountSelection = selectAccountHolderSnapshots(allPortfolios);
 
-        const consolidated = consolidatePortfolios(allPortfolios);
+        const consolidated = consolidatePortfolios(accountSelection.snapshots);
         const portfolio = consolidated.portfolio;
 
         if (!portfolio.holdings.length) {
