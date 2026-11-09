@@ -33,6 +33,7 @@ from vector_store import VectorStore
 from rag import generate_answer, is_listing_question
 from account_holder_selection import select_account_holder_documents
 from portfolio_reconciliation import classify_statement_type, reconcile_portfolio_documents
+from chat_portfolio import build_chat_portfolio
 from upload_validation import (
     MAX_UPLOAD_BYTES, UploadTooLargeError, save_upload_limited, validate_uploaded_file,
 )
@@ -1069,18 +1070,14 @@ def chat(request: ChatRequest):
         calculation_data = None
 
         if holdings:
-            # Currency is assumed INR because the Excel extractor does
-            # not return per-holding currency.
-            portfolio = {
-                "client_id": request.client_id,
-                "currency": "INR",
-                "report_date": consolidation.get("report_date"),
-                "holdings": holdings,
-            }
+            portfolio = build_chat_portfolio(
+                request.client_id,
+                holdings,
+                consolidation,
+            )
 
-            # Portfolio metrics require a valid numeric current value
-            # for every holding. A missing value must not crash simple
-            # document lookups such as listing investment names.
+            # Portfolio metrics require both verified currency and a
+            # valid numeric current value for every holding.
             current_values_complete = all(
                 isinstance(h.get("current_value"), (int, float))
                 and not isinstance(h.get("current_value"), bool)
@@ -1089,24 +1086,32 @@ def chat(request: ChatRequest):
                 for h in holdings
             )
 
-            if current_values_complete:
+            if current_values_complete and portfolio is not None:
                 calculation_data = calculate_portfolio_metrics(portfolio)
                 calculation_data["documents"] = documents
                 calculation_data["consolidation"] = consolidation
             elif is_listing_question(request.question):
-                # A name listing needs no valuation. Do not calculate or
-                # expose portfolio totals from incomplete holding data.
+                # Listing names does not require valuation or currency.
+                # Never attach calculated totals when either is unverified.
                 calculation_data = {
                     "holdings": holdings,
                     "holding_count": len(holdings),
                     "documents": documents,
                     "consolidation": consolidation,
-                    "data_incomplete": True,
+                    "data_incomplete": not current_values_complete,
+                    "metrics_unavailable_reason": (
+                        None if portfolio is not None
+                        else "Portfolio currency is missing or unverified."
+                    ),
                 }
             else:
+                reason = (
+                    "unverified portfolio currency"
+                    if portfolio is None
+                    else "missing or invalid current_value in one or more holdings"
+                )
                 print(
-                    "CHAT METRICS UNAVAILABLE: missing or invalid "
-                    "current_value in one or more holdings.",
+                    f"CHAT METRICS UNAVAILABLE: {reason}.",
                     flush=True,
                 )
 
