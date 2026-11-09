@@ -33,6 +33,7 @@ from document_processor import process_pdf
 from vector_store import VectorStore
 from rag import generate_answer, is_listing_question
 from account_holder_selection import select_account_holder_documents
+from portfolio_reconciliation import classify_statement_type, reconcile_portfolio_documents
 
 
 # --------------------------------------------------
@@ -291,9 +292,11 @@ def consolidate_holdings(holdings: list, documents: list):
 
 def load_latest_portfolio(client_id: str, document_type: str | None = None):
     """
-    Return the newest valuation snapshot for the most recently identified
-    account holder. This prevents unrelated people’s statements from being
-    combined in analytics, risk, or document-grounded portfolio answers.
+    Load one date-aware snapshot for the active account holder.
+
+    Statements valued on nearby dates may belong to the same reporting
+    period (for example CAS on 31-Oct and Demat on 30-Oct). Reconciliation
+    is delegated to the shared portfolio reconciliation engine.
     """
     holdings, documents = load_all_portfolio_holdings(client_id)
 
@@ -312,29 +315,130 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
     if not documents:
         return [], [], {}
 
-    latest_date = max(d.get("report_date") or "" for d in documents)
+    dated_values = [
+        str(d.get("report_date"))[:10]
+        for d in documents
+        if d.get("report_date")
+    ]
+    latest_date = max(dated_values) if dated_values else None
 
+    # Without valuation dates, documents cannot safely be assumed to
+    # represent one snapshot. Use only the newest upload rather than
+    # combining every undated file.
+    if latest_date is None:
+        newest = max(
+            documents,
+            key=lambda d: str(d.get("saved_at") or "")
+        )
+        reconciliation_source_docs = [newest]
+    else:
+        reconciliation_source_docs = documents
+
+    relevant_dates = []
+    if latest_date:
+        latest_parsed = datetime.fromisoformat(latest_date).date()
+        for document in reconciliation_source_docs:
+            value = document.get("report_date")
+            try:
+                parsed = datetime.fromisoformat(str(value)[:10]).date()
+            except (TypeError, ValueError):
+                continue
+            gap = (latest_parsed - parsed).days
+            if 0 <= gap <= 7:
+                relevant_dates.append(document)
+
+    relevant_for_currency = (
+        relevant_dates if latest_date else reconciliation_source_docs
+    )
+    known_currencies = {
+        str(d.get("currency")).strip().upper()
+        for d in relevant_for_currency
+        if d.get("currency")
+    }
+    missing_currency_docs = [
+        d for d in relevant_for_currency if not d.get("currency")
+    ]
+
+    if len(known_currencies) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Statements in the selected reporting period use different "
+                "currencies. Convert them to one currency before portfolio analysis."
+            ),
+        )
+
+    if known_currencies and missing_currency_docs:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Currency is missing from one or more statements in the "
+                "selected reporting period. Re-upload or verify those statements "
+                "before combining their values."
+            ),
+        )
+
+    currency = next(iter(known_currencies), None)
+    holdings_by_document = {}
+    for holding in holdings:
+        holdings_by_document.setdefault(holding.get("document_id"), []).append(holding)
+
+    reconciliation_documents = []
+    for document in reconciliation_source_docs:
+        document_id = document.get("document_id")
+        reconciliation_documents.append({
+            "document_id": document_id,
+            "filename": document.get("filename"),
+            "report_date": document.get("report_date"),
+            "currency": document.get("currency"),
+            "statement_type": document.get("statement_type") or classify_statement_type(
+                document.get("filename") or ""
+            ),
+            "holdings": holdings_by_document.get(document_id, []),
+        })
+
+    reconciled = reconcile_portfolio_documents(
+        reconciliation_documents,
+        target_report_date=latest_date,
+    )
+
+    used_ids = {
+        item.get("document_id")
+        for item in reconciled.get("documents", [])
+    }
     selected = [
-        d for d in documents
-        if (d.get("report_date") or "") == latest_date
+        document for document in reconciliation_source_docs
+        if document.get("document_id") in used_ids
     ]
 
-    selected_ids = {d["document_id"] for d in selected}
-
-    selected_holdings = [
-        h for h in holdings
-        if h.get("document_id") in selected_ids
-    ]
-
-    consolidated, info = consolidate_holdings(selected_holdings, selected)
-    info["report_date"] = latest_date or None
-    info["account_holder"] = (
-        selected[0].get("account_holder") if selected else active_account_holder
+    records_before = sum(
+        len(document.get("holdings") or [])
+        for document in reconciliation_documents
+        if document.get("document_id") in used_ids
     )
-    info["excluded_account_document_count"] = (
-        len(all_documents_before_account_filter) - len(documents)
-        if active_account_holder else 0
-    )
+    consolidated = reconciled.get("holdings", [])
+    info = {
+        "reports_used": len(selected),
+        "records_before_dedupe": records_before,
+        "records_after_dedupe": len(consolidated),
+        "duplicates_removed": max(0, records_before - len(consolidated)),
+        "valuation_differences": reconciled.get("valuation_differences", []),
+        "duplicate_groups": reconciled.get("duplicate_groups", []),
+        "flagged_records": reconciled.get("flagged_records", []),
+        "excluded_records": reconciled.get("excluded_records", []),
+        "unreconciled_documents": reconciled.get("unreconciled_documents", []),
+        "reconciliation_warnings": reconciled.get("warnings", []),
+        "report_date": reconciled.get("report_date") or latest_date,
+        "account_holder": (
+            selected[0].get("account_holder") if selected
+            else active_account_holder
+        ),
+        "currency": currency,
+        "excluded_account_document_count": (
+            len(all_documents_before_account_filter) - len(documents)
+            if active_account_holder else 0
+        ),
+    }
 
     return consolidated, selected, info
 
@@ -390,9 +494,19 @@ def build_portfolio_for_analysis(request):
     )
 
     if holdings:
+        saved_currency = consolidation.get("currency")
+        if not saved_currency:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "The currency of the saved portfolio could not be verified. "
+                    "Re-upload the statement with a clearly identified currency "
+                    "before running financial analysis."
+                ),
+            )
         return {
             "client_id": request.client_id,
-            "currency": request.currency,
+            "currency": saved_currency,
             "report_date": consolidation.get("report_date"),
             "holdings": holdings,
             "profile": request.profile,
