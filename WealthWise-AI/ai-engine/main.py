@@ -327,6 +327,16 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
                 str(d.get("account_holder") or "").strip().casefold().split()
             ) == active_account_holder
         ]
+    else:
+        # Match the Node.js account-scope policy: without explicit owner
+        # metadata, never combine unrelated legacy documents. Use only the
+        # newest single report as a provisional, unverified snapshot.
+        documents = [
+            max(
+                documents,
+                key=lambda d: (d.get("report_date") or "", d.get("saved_at") or ""),
+            )
+        ] if documents else []
 
     if not documents:
         return [], [], {}
