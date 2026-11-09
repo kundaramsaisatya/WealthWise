@@ -30,6 +30,11 @@ class WorkbookCurrencyTests(unittest.TestCase):
         self.assertIsNone(extract_workbook_currency(self.workbook()))
 
     @patch("excel_extractor.pd.read_excel")
+    def test_does_not_treat_company_name_rs_as_inr(self, read_excel):
+        read_excel.return_value = pd.DataFrame([["RS Software", "Market Value"]])
+        self.assertIsNone(extract_workbook_currency(self.workbook()))
+
+    @patch("excel_extractor.pd.read_excel")
     def test_does_not_guess_from_ambiguous_dollar_symbol(self, read_excel):
         read_excel.return_value = pd.DataFrame([["Market Value ($)"]])
         self.assertIsNone(extract_workbook_currency(self.workbook()))
