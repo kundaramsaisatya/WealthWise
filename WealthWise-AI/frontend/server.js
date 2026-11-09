@@ -22,6 +22,21 @@ const connectDB = require("./config/database");
 const GoalHoldingAllocation = require("./models/GoalHoldingAllocation");
 const { selectAccountHolderSnapshots } = require("./utils/accountHolderSelection");
 const { isSameOriginMutation, isAllowedUpload } = require("./utils/security");
+const { createRateLimiter, authKey } = require("./utils/rateLimiter");
+
+const loginRateLimit = createRateLimiter({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    keyGenerator: authKey,
+    message: "Too many login attempts. Try again in 15 minutes."
+});
+
+const registrationRateLimit = createRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    keyGenerator: req => req.ip || req.socket?.remoteAddress || "unknown",
+    message: "Too many registration attempts. Try again later."
+});
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -464,7 +479,7 @@ function establishAuthenticatedSession(req, user, res) {
 }
 
 
-app.post("/register", async (req, res) => {
+app.post("/register", registrationRateLimit, async (req, res) => {
 
     try {
         const { name, email, password } = req.body;
@@ -505,7 +520,7 @@ app.post("/register", async (req, res) => {
 // LOGIN
 // --------------------------------------------------
 
-app.post("/login", async (req, res) => {
+app.post("/login", loginRateLimit, async (req, res) => {
 
     try {
         const { email, password } = req.body;
