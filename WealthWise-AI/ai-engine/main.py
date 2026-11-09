@@ -33,6 +33,7 @@ from vector_store import VectorStore
 from rag import generate_answer, is_listing_question
 from account_holder_selection import select_account_holder_documents
 from portfolio_reconciliation import classify_statement_type, reconcile_portfolio_documents
+from chat_portfolio import build_chat_portfolio
 from upload_validation import (
     MAX_UPLOAD_BYTES, UploadTooLargeError, save_upload_limited, validate_uploaded_file,
 )
