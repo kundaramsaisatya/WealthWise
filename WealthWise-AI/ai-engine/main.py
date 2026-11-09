@@ -391,6 +391,7 @@ def build_history_records(client_id: str):
     return [
         {
             "isin": holding.get("isin"),
+            "folio_number": holding.get("folio_number"),
             "name": holding.get("name"),
             "report_date": holding.get("report_date"),
             "current_value": holding.get("current_value"),
