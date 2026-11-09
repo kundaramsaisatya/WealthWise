@@ -100,13 +100,20 @@ STRICT RULES:
 11. Do not provide investment recommendations. You may describe
     flagged items as points the reader may want to review with a
     qualified financial adviser.
-12. Begin Portfolio Overview with one line saying which thresholds
-    were used. If investor_profile says none was supplied, say the
-    default thresholds were used and the analysis is not personalised.
-    Only risk tolerance (if given) changed the thresholds; goal and
-    horizon were not used in any calculation.
-13. Do not mention equity limits or whether the equity share was
-    tested. A fixed note about this is appended separately.
+12. Begin Portfolio Overview by stating which portfolio thresholds
+    were applied: the risk-tolerance profile thresholds, default
+    thresholds, and any custom overrides shown in the supplied facts.
+    If no risk tolerance was supplied, do not describe the profile
+    thresholds as personalised.
+    If horizon_years is present and a goal-horizon equity limit is
+    supplied in investor_profile, explain that this separate
+    illustrative horizon rule was also evaluated. Describe a
+    corresponding Goal Horizon Risk only when it appears in risk_flags.
+    The goal label is contextual and does not itself alter calculations.
+13. Distinguish the profile's max-equity threshold from the separate
+    goal-horizon equity rule. Do not claim equity exposure was untested
+    when a goal-horizon equity limit was applied. A fixed note appended
+    by code explains when no applicable equity limit was configured.
 14. sub_category_allocation_top lists fund categories or styles
     (for example Mid Cap, Index Fund), NOT industry sectors. Never
     call them sectors, and say industry-sector exposure is not
@@ -354,15 +361,25 @@ def generate_risk_explanation(risk_data):
     thresholds = risk_data.get("thresholds", {})
     equity_percentage = risk_data.get("equity_percentage")
 
+    profile_used = risk_data.get("profile_used") or {}
+    horizon_limit = profile_used.get("goal_horizon_equity_limit_pct")
+
     if (
         thresholds.get("max_equity_pct") is None
         and equity_percentage is not None
     ):
-        explanation += (
-            "\n\nNote: no equity-share limit was configured, so the "
-            f"equity weight of {equity_percentage}% was not tested "
-            "against any threshold."
-        )
+        if horizon_limit is not None:
+            explanation += (
+                "\n\nNote: no investor-profile equity-share limit was "
+                "configured. A separate illustrative goal-horizon equity "
+                f"limit of {horizon_limit}% was evaluated."
+            )
+        else:
+            explanation += (
+                "\n\nNote: no applicable equity-share limit was "
+                "configured, so equity exposure was not tested against "
+                "an equity threshold."
+            )
 
     # Verified portfolio value, appended from code (not model output).
     explanation += (
