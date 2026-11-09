@@ -97,5 +97,40 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(result["holdings"][0]["history_days"], 677)
 
 
+    def test_history_is_isolated_between_folios_of_same_fund(self):
+        result = analyze_data_quality(
+            {
+                "report_date": "2026-11-09",
+                "holdings": [
+                    {
+                        "name": "Same Fund",
+                        "isin": "INF000000001",
+                        "folio_number": "FOLIO-A",
+                        "asset_class": "Equity",
+                        "invested_value": 100,
+                        "sector": "Financials",
+                    },
+                    {
+                        "name": "Same Fund",
+                        "isin": "INF000000001",
+                        "folio_number": "FOLIO-B",
+                        "asset_class": "Equity",
+                        "invested_value": 100,
+                        "sector": "Financials",
+                    },
+                ],
+            },
+            history_records=[
+                {"isin": "INF000000001", "folio_number": "FOLIO-A", "report_date": "2025-01-01"},
+                {"isin": "INF000000001", "folio_number": "FOLIO-A", "report_date": "2026-11-09"},
+                {"isin": "INF000000001", "folio_number": "FOLIO-B", "report_date": "2026-11-09"},
+            ],
+            as_of_date="2026-11-09",
+        )
+        self.assertEqual(result["historical_coverage_percentage"], 50.0)
+        self.assertEqual(result["holdings"][0]["history_status"], "Sufficient")
+        self.assertEqual(result["holdings"][1]["history_status"], "Insufficient History")
+
+
 if __name__ == "__main__":
     unittest.main()
