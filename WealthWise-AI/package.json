@@ -7,7 +7,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:account-holder",
     "start": "node frontend/server.js",
     "dev": "nodemon frontend/server.js",
     "test:account-holder": "python -m unittest discover -s ai-engine -p test_account_holder.py"
