@@ -990,6 +990,7 @@ def extract_excel(file_path):
 
         account_holder = extract_workbook_account_holder(workbook)
         folio_metadata = extract_folio_metadata(workbook)
+        currency = extract_workbook_currency(workbook)
 
         for sheet_name in workbook.sheet_names:
 
@@ -1027,6 +1028,7 @@ def extract_excel(file_path):
     return {
         "report_date": report_date,
         "account_holder": account_holder,
+        "currency": currency,
         "folio_metadata": folio_metadata,
         "sheets": extracted_data
     }
