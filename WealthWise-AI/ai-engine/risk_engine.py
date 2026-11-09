@@ -78,13 +78,31 @@ def resolve_profile(profile):
         if not isfinite(horizon) or horizon < 0:
             raise ValueError("horizon_years must be a finite non-negative number.")
 
+    used_in_calculation = [
+        "risk-tolerance profile thresholds" if tolerance
+        else "default portfolio thresholds"
+    ]
+    if overrides:
+        used_in_calculation.append("custom threshold overrides")
+
+    horizon_rule = next(
+        (
+            rule for rule in GOAL_HORIZON_EQUITY_LIMITS
+            if horizon is not None and horizon <= rule["max_horizon_years"]
+        ),
+        None,
+    )
+    if horizon_rule:
+        used_in_calculation.append("illustrative goal-horizon equity exposure rule")
+
     profile_used = {
         "risk_tolerance": tolerance or None,
         "goal": profile.get("goal"),
         "horizon_years": horizon,
-        "used_in_calculation": [
-            "risk_tolerance thresholds" if tolerance else "custom thresholds only"
-        ],
+        "goal_horizon_equity_limit_pct": (
+            horizon_rule["max_equity_pct"] if horizon_rule else None
+        ),
+        "used_in_calculation": used_in_calculation,
     }
 
     return thresholds or None, profile_used
