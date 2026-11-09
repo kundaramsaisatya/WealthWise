@@ -315,11 +315,17 @@ def load_latest_portfolio(client_id: str, document_type: str | None = None):
     if not documents:
         return [], [], {}
 
-    dated_values = [
-        str(d.get("report_date"))[:10]
-        for d in documents
-        if d.get("report_date")
-    ]
+    dated_values = []
+    for document in documents:
+        raw_date = document.get("report_date")
+        try:
+            normalized_date = datetime.fromisoformat(
+                str(raw_date)[:10]
+            ).date().isoformat()
+        except (TypeError, ValueError):
+            continue
+        dated_values.append(normalized_date)
+
     latest_date = max(dated_values) if dated_values else None
 
     # Without valuation dates, documents cannot safely be assumed to
@@ -887,7 +893,7 @@ async def upload_document(
                 "document_type": "excel",
                 "report_date": report_date,
                 "account_holder": extracted_data.get("account_holder"),
-                "currency": "INR",
+                "currency": extracted_data.get("currency"),
                 "holdings": all_holdings,
             },
         )
@@ -913,6 +919,7 @@ async def upload_document(
             "status": "ready",
             "document_type": "excel",
             "report_date": report_date,
+            "currency": extracted_data.get("currency"),
             "account_holder": extracted_data.get("account_holder"),
             "folio_metadata": extracted_data.get("folio_metadata", []),
             "sheets": extracted_data.get("sheets", {}),
