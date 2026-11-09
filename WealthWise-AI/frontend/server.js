@@ -21,10 +21,19 @@ const Document = require("./models/Document");
 const connectDB = require("./config/database");
 const GoalHoldingAllocation = require("./models/GoalHoldingAllocation");
 const { selectAccountHolderSnapshots } = require("./utils/accountHolderSelection");
+const { isSameOriginMutation, isAllowedUpload } = require("./utils/security");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const AI_URL = process.env.AI_SERVICE_URL || "http://localhost:8000";
+
+if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
+    throw new Error("SESSION_SECRET must be configured with at least 32 characters.");
+}
+
+if (!process.env.AI_SERVICE_SECRET || process.env.AI_SERVICE_SECRET.length < 32) {
+    throw new Error("AI_SERVICE_SECRET must be configured with at least 32 characters.");
+}
 
 let sessionMiddleware;
 
@@ -43,7 +52,7 @@ app.use((req, res, next) => {
 
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }
+    limits: { fileSize: 10 * 1024 * 1024, files: 5 }
 });
 
 app.set("view engine", "ejs");
@@ -52,6 +61,17 @@ app.set("views", path.join(__dirname, "views"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
+
+// Reject cross-origin browser mutations; SameSite cookies are defense in depth.
+app.use((req, res, next) => {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+        return next();
+    }
+    if (!isSameOriginMutation(req)) {
+        return res.status(403).json({ error: "Cross-origin request rejected." });
+    }
+    next();
+});
 
 
 //financialGoal
@@ -975,6 +995,12 @@ app.post(
                 if (![".pdf", ".xlsx"].includes(extension)) {
                     throw new Error(
                         "Only PDF and XLSX files are accepted."
+                    );
+                }
+
+                if (!isAllowedUpload(file)) {
+                    throw new Error(
+                        "The file content does not match a supported PDF or XLSX format."
                     );
                 }
 
