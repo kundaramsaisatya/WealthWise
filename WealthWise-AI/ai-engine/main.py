@@ -54,9 +54,14 @@ AI_SERVICE_SECRET = os.getenv("AI_SERVICE_SECRET")
 if not AI_SERVICE_SECRET:
     raise RuntimeError("AI_SERVICE_SECRET is missing from environment.")
 
-UPLOAD_DIR = BASE_DIR / "data" / "uploads"
-VECTOR_DIR = BASE_DIR / "data" / "vector_data"
-PORTFOLIO_DIR = BASE_DIR / "data" / "portfolios"
+# Mount this directory on persistent storage in deployed environments. It holds
+# uploaded statements, per-client vector indexes and structured portfolio data.
+DATA_DIR = Path(
+    os.getenv("WEALTHWISE_DATA_DIR", str(BASE_DIR / "data"))
+).expanduser().resolve()
+UPLOAD_DIR = DATA_DIR / "uploads"
+VECTOR_DIR = DATA_DIR / "vector_data"
+PORTFOLIO_DIR = DATA_DIR / "portfolios"
 
 for directory in (UPLOAD_DIR, VECTOR_DIR, PORTFOLIO_DIR):
     directory.mkdir(parents=True, exist_ok=True)
