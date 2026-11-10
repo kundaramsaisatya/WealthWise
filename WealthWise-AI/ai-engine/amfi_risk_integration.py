@@ -36,7 +36,8 @@ def _is_stale(timestamp, now):
 
 
 def enrich_history_with_amfi_nav(
-    records, as_of_date=None, fetcher=None, cache=None, cache_path=None
+    records, as_of_date=None, fetcher=None, cache=None, cache_path=None,
+    fetch_missing=True
 ):
     if records is None:
         records = []
@@ -65,6 +66,7 @@ def enrich_history_with_amfi_nav(
         "max_range_fetches_per_isin_per_request": MAX_RANGE_FETCHES_PER_ISIN_PER_REQUEST,
         "requested_isin_count": len(holdings_by_isin),
         "matched_isin_count": 0,
+        "backfill_pending": False,
         "failed_isins": [],
         "partially_cached_isins": [],
         "cache_path_configurable": True,
@@ -76,7 +78,7 @@ def enrich_history_with_amfi_nav(
             "AMFI scheme-level NAVs are cached in a local SQLite database. "
             "Only exact ISIN matches are used. Current holding values and "
             "portfolio valuations are unchanged. First-time history backfill "
-            "is incremental and may take multiple risk-analysis requests."
+            "is incremental and may take multiple background worker runs."
         ),
     }
 
@@ -103,12 +105,15 @@ def enrich_history_with_amfi_nav(
                         selected.append(item)
 
             range_failures = False
-            for range_start, range_end in selected:
-                try:
-                    observations = fetch(isin, range_start, range_end)
-                    nav_cache.save_range(isin, range_start, range_end, observations)
-                except (AMFINavProviderError, OSError, TimeoutError, ValueError):
-                    range_failures = True
+            if fetch_missing:
+                for range_start, range_end in selected:
+                    try:
+                        observations = fetch(isin, range_start, range_end)
+                        nav_cache.save_range(isin, range_start, range_end, observations)
+                    except (AMFINavProviderError, OSError, TimeoutError, ValueError):
+                        range_failures = True
+            elif selected:
+                provider_status["backfill_pending"] = True
 
             completed_after = nav_cache.get_range_status(isin)
             if len(completed_after) < len(ranges):
