@@ -102,15 +102,21 @@ def enrich_history_with_amfi_nav(
                     if item not in selected and len(selected) < MAX_RANGE_FETCHES_PER_ISIN_PER_REQUEST:
                         selected.append(item)
 
+            range_failures = False
             for range_start, range_end in selected:
-                observations = fetch(isin, range_start, range_end)
-                nav_cache.save_range(isin, range_start, range_end, observations)
+                try:
+                    observations = fetch(isin, range_start, range_end)
+                    nav_cache.save_range(isin, range_start, range_end, observations)
+                except (AMFINavProviderError, OSError, TimeoutError, ValueError):
+                    range_failures = True
 
             completed_after = nav_cache.get_range_status(isin)
             if len(completed_after) < len(ranges):
                 provider_status["partially_cached_isins"].append(isin)
 
             observations = nav_cache.get_observations(isin, start_date, end_date)
+            if range_failures:
+                provider_status["failed_isins"].append(isin)
         except (AMFINavProviderError, OSError, TimeoutError, ValueError):
             provider_status["failed_isins"].append(isin)
             continue
