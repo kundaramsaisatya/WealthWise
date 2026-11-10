@@ -7,9 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-DEFAULT_CACHE_PATH = (
-    Path(__file__).resolve().parent.parent / "data" / "amfi_nav_cache.sqlite3"
-)
+DEFAULT_DATA_DIR = Path(
+    os.getenv(
+        "WEALTHWISE_DATA_DIR",
+        str(Path(__file__).resolve().parent.parent / "data"),
+    )
+).expanduser()
+DEFAULT_CACHE_PATH = DEFAULT_DATA_DIR / "amfi_nav_cache.sqlite3"
 
 
 class AMFINavCache:
