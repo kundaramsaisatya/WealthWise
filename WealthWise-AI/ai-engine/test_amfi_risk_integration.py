@@ -105,6 +105,26 @@ class AMFIRiskIntegrationTests(unittest.TestCase):
         self.assertEqual(len(calls), first_count + MAX_RANGE_FETCHES_PER_ISIN_PER_REQUEST)
         self.assertNotEqual(calls[-1], calls[0])
 
+    def test_cache_only_mode_schedules_backfill_without_provider_calls(self):
+        records = [{"isin": "INF000000001", "name": "Fund A"}]
+        cache = FakeCache()
+        calls = []
+
+        def fetcher(*args):
+            calls.append(args)
+            return []
+
+        enriched, status = enrich_history_with_amfi_nav(
+            records,
+            as_of_date=date(2026, 4, 10),
+            fetcher=fetcher,
+            cache=cache,
+            fetch_missing=False,
+        )
+        self.assertEqual(enriched, records)
+        self.assertEqual(calls, [])
+        self.assertTrue(status["backfill_pending"])
+
     def test_long_history_is_split_into_amfi_compatible_ranges(self):
         from amfi_risk_integration import _history_ranges
         ranges = _history_ranges(date(2023, 1, 1), date(2026, 1, 1))
