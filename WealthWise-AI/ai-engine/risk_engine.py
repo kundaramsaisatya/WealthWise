@@ -117,7 +117,9 @@ def analyze_portfolio_risk(
     portfolio_data,
     history_records=None,
     as_of_date=None,
-    profile=None
+    profile=None,
+    external_nav_status=None,
+    data_quality_history_records=None
 ):
     thresholds, profile_used = resolve_profile(profile)
 
@@ -138,7 +140,10 @@ def analyze_portfolio_risk(
 
     data_quality = analyze_data_quality(
         portfolio_data,
-        history_records=history_records,
+        history_records=(
+            data_quality_history_records
+            if data_quality_history_records is not None else history_records
+        ),
         as_of_date=as_of_date
     )
     instrument_history_analysis = analyze_instrument_nav_history(history_records)
@@ -230,6 +235,7 @@ def analyze_portfolio_risk(
         "profile_used": profile_used,
         "data_quality": data_quality,
         "instrument_history_analysis": instrument_history_analysis,
+        "external_nav_status": external_nav_status,
         "consolidation": (
             portfolio_data.get("consolidation")
             if isinstance(portfolio_data, dict) else None

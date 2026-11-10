@@ -7,7 +7,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "npm run test:api-error-disclosure && npm run test:instrument-risk && npm run test:chat-portfolio && npm run test:upload-validation && npm run test:account-holder && npm run test:portfolio-quality && npm run test:financial-engines && npm run test:account-holder-isolation && npm run test:account-holder-selection && npm run test:portfolio-reconciliation && npm run test:excel-currency && npm run test:security && npm run test:rate-limiter && npm run test:amfi-nav",
+    "test": "npm run test:api-error-disclosure && npm run test:instrument-risk && npm run test:chat-portfolio && npm run test:upload-validation && npm run test:account-holder && npm run test:portfolio-quality && npm run test:financial-engines && npm run test:account-holder-isolation && npm run test:account-holder-selection && npm run test:portfolio-reconciliation && npm run test:excel-currency && npm run test:security && npm run test:rate-limiter && npm run test:amfi-nav && npm run test:amfi-risk-integration",
     "start": "node frontend/server.js",
     "dev": "nodemon frontend/server.js",
     "test:account-holder": "python -m unittest discover -s ai-engine -p test_account_holder.py",
@@ -23,7 +23,8 @@
     "test:chat-portfolio": "python -m unittest discover -s ai-engine -p test_chat_portfolio.py",
     "test:api-error-disclosure": "python -m unittest discover -s ai-engine -p test_api_error_disclosure.py",
     "test:instrument-risk": "python -m unittest discover -s ai-engine -p test_instrument_risk.py",
-    "test:amfi-nav": "python -m unittest discover -s ai-engine -p test_amfi_nav.py"
+    "test:amfi-nav": "python -m unittest discover -s ai-engine -p test_amfi_nav.py",
+    "test:amfi-risk-integration": "python -m unittest discover -s ai-engine -p test_amfi_risk_integration.py"
   },
   "keywords": [],
   "author": "",

@@ -27,6 +27,7 @@ from portfolio_analytics import calculate_portfolio_metrics
 from excel_extractor import extract_excel
 from portfolio_extractor import extract_portfolio_from_pdf
 from risk_engine import analyze_portfolio_risk
+from amfi_risk_integration import enrich_history_with_amfi_nav
 from risk_explainer import generate_risk_explanation
 from document_processor import process_pdf
 from vector_store import VectorStore
@@ -1224,10 +1225,14 @@ def risk_analysis(request: PortfolioRequest):
     try:
         portfolio = build_portfolio_for_analysis(request)
 
+        statement_history_records = build_history_records(request.client_id)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
         return analyze_portfolio_risk(
             portfolio,
-            history_records=build_history_records(request.client_id),
+            history_records=history_records,
             profile=portfolio.get("profile"),
+            external_nav_status=nav_provider_status,
+            data_quality_history_records=statement_history_records,
         )
 
     except HTTPException:
@@ -1259,10 +1264,14 @@ def goal_risk_analysis(request: PortfolioRequest):
                 detail="No allocated goal holdings supplied.",
             )
 
+        statement_history_records = build_history_records(request.client_id)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
         return analyze_portfolio_risk(
             portfolio,
-            history_records=build_history_records(request.client_id),
+            history_records=history_records,
             profile=request.profile,
+            external_nav_status=nav_provider_status,
+            data_quality_history_records=statement_history_records,
         )
 
     except HTTPException:
@@ -1287,10 +1296,13 @@ def risk_explanation(request: PortfolioRequest):
     try:
         portfolio = build_portfolio_for_analysis(request)
 
+        statement_history_records = build_history_records(request.client_id)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
         risk_data = analyze_portfolio_risk(
             portfolio,
-            history_records=build_history_records(request.client_id),
+            history_records=history_records,
             profile=portfolio.get("profile"),
+            external_nav_status=nav_provider_status,
         )
 
         explanation = generate_risk_explanation(risk_data)
