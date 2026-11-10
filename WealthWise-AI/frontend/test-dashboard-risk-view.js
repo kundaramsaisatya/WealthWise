@@ -9,6 +9,9 @@ test("dashboard contains safely escaped instrument NAV risk insights", () => {
 
     assert.match(template, /Instrument NAV History/);
     assert.match(template, /Portfolio Risk Indicator/);
+    assert.match(template, /Sector Exposure/);
+    assert.match(template, /Issuer Exposure/);
+    assert.match(template, /identified coverage/i);
     assert.match(template, /View calculation evidence/);
     assert.match(template, /Scoring methodology and limitations/);
     assert.match(template, /volatility_per_observation_percentage/);
