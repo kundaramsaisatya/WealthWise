@@ -1,7 +1,11 @@
 from math import isfinite
 
 from portfolio_analytics import calculate_portfolio_metrics
-from data_quality import analyze_data_quality
+from data_quality import (
+    analyze_data_quality,
+    LIMITED_HISTORY_CONCENTRATION_PCT,
+    MIN_HISTORY_DAYS,
+)
 
 
 # Illustrative, configurable limits. These are not investment advice
@@ -137,7 +141,33 @@ def analyze_portfolio_risk(
         as_of_date=as_of_date
     )
 
-    risk_flags = list(portfolio.get("risk_flags", []))
+risk_flags = list(portfolio.get("risk_flags", []))
+
+    # Flag material allocations when the available history is too short
+    # to support reliable historical risk estimates.
+    for holding in data_quality.get("holdings", []):
+        weight = holding.get("weight_percentage")
+        if (
+            holding.get("history_status") == "Insufficient History"
+            and isinstance(weight, (int, float))
+            and not isinstance(weight, bool)
+            and weight >= LIMITED_HISTORY_CONCENTRATION_PCT
+        ):
+            name = holding.get("name") or "A holding"
+            risk_flags.append({
+                "type": "Limited-History Concentration",
+                "severity": "Medium",
+                "holding_name": name,
+                "holding_percentage": weight,
+                "configured_limit": LIMITED_HISTORY_CONCENTRATION_PCT,
+                "message": (
+                    f"{name} represents {weight}% of the portfolio but has "
+                    f"less than {MIN_HISTORY_DAYS} days of available history. "
+                    "Its risk cannot be reliably estimated from the available "
+                    "historical data; review the allocation and obtain more evidence."
+                )
+            })
+
 
     if profile_used and profile_used.get("horizon_years") is not None:
         horizon_years = profile_used["horizon_years"]
