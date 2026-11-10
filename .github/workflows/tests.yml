@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  python-tests:
+  regression-tests:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -20,8 +20,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: WealthWise-AI/package-lock.json
+      - name: Install Node.js dependencies
+        working-directory: WealthWise-AI
+        run: npm ci
       - name: Install Python test dependencies
         run: python -m pip install --upgrade pip pandas openpyxl
+      - name: Check JavaScript syntax
+        working-directory: WealthWise-AI
+        run: find frontend -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Run regression tests
         working-directory: WealthWise-AI
         run: npm test
