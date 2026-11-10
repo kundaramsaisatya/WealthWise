@@ -109,6 +109,17 @@
         ? safeRisk.risk_flags
         : [];
 
+    const instrumentRisk = safeRisk?.instrument_history_analysis || null;
+    const instrumentRiskRows = Array.isArray(instrumentRisk?.instruments)
+        ? instrumentRisk.instruments
+        : [];
+    const navProviderStatus = safeRisk?.external_nav_status || null;
+    const formatPercentage = value =>
+        value === null || value === undefined || value === "" ||
+        !Number.isFinite(Number(value))
+            ? "N/A"
+            : Number(value).toFixed(2) + "%";
+
     const analyticsRiskFlags = Array.isArray(safeAnalytics?.risk_flags)
         ? safeAnalytics.risk_flags
         : [];
@@ -857,6 +868,88 @@
 
                 </div>
 
+
+
+                <!-- INSTRUMENT NAV HISTORY -->
+                <div class="content-card instrument-risk-card">
+                    <div class="card-heading">
+                        <div>
+                            <h3>Instrument NAV History</h3>
+                            <p>Historical scheme NAV observations used for instrument-level analysis.</p>
+                        </div>
+                    </div>
+
+                    <% if (navProviderStatus) { %>
+                        <div class="performance-scope">
+                            NAV source: <%= navProviderStatus.provider || "External provider" %>.
+                            <% if (navProviderStatus.history_window?.start_date && navProviderStatus.history_window?.end_date) { %>
+                                Requested period: <%= navProviderStatus.history_window.start_date %> to <%= navProviderStatus.history_window.end_date %>.
+                            <% } %>
+                            <% if (navProviderStatus.partial_backfill_count > 0) { %>
+                                Historical backfill is still in progress for <%= navProviderStatus.partial_backfill_count %> instrument(s).
+                            <% } else { %>
+                                Requested history ranges are cached.
+                            <% } %>
+                        </div>
+                    <% } %>
+
+                    <% if (instrumentRiskRows.length > 0) { %>
+                        <div class="table-container instrument-risk-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Instrument</th>
+                                        <th>Data source</th>
+                                        <th>Observations</th>
+                                        <th>NAV change</th>
+                                        <th>Maximum drawdown</th>
+                                        <th>Volatility / observation</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <% instrumentRiskRows.forEach(item => { %>
+                                        <tr>
+                                            <td class="investment-name">
+                                                <strong><%= item.name || "Unknown instrument" %></strong>
+                                                <% if (item.isin) { %><small><%= item.isin %></small><% } %>
+                                                <% if (item.folio_number) { %><small>Folio: <%= item.folio_number %></small><% } %>
+                                            </td>
+                                            <td><%= item.data_source || "Uploaded statement" %></td>
+                                            <td><%= Number.isFinite(Number(item.observation_count)) ? item.observation_count : "N/A" %></td>
+                                            <td><%= formatPercentage(item.nav_change_percentage) %></td>
+                                            <td><%= formatPercentage(item.max_drawdown_percentage) %></td>
+                                            <td>
+                                                <% if (item.volatility_status === "available") { %>
+                                                    <%= formatPercentage(item.volatility_per_observation_percentage) %>
+                                                <% } else { %>
+                                                    Not enough history
+                                                <% } %>
+                                            </td>
+                                            <td><%= item.status === "success" ? "Available" : item.status === "ambiguous_data" ? "Conflicting data" : "Insufficient data" %></td>
+                                        </tr>
+                                    <% }) %>
+                                </tbody>
+                            </table>
+                        </div>
+                    <% } else { %>
+                        <div class="performance-empty">
+                            No valid dated NAV history is currently available for instrument-level analysis.
+                        </div>
+                    <% } %>
+
+                    <% if (instrumentRisk?.limitations?.length) { %>
+                        <ul class="instrument-risk-limitations">
+                            <% instrumentRisk.limitations.forEach(note => { %>
+                                <li><%= note %></li>
+                            <% }) %>
+                        </ul>
+                    <% } %>
+                    <p class="muted-text">
+                        NAV change is not an investor return. It does not adjust for distributions, fees, taxes or cash flows.
+                        Volatility is measured per observation and is not annualized. Historical data does not predict future performance.
+                    </p>
+                </div>
 
                 <!-- AI RISK EXPLANATION -->
 
