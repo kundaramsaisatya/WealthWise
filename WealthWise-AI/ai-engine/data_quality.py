@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
+import math
 
 from portfolio_analytics import normalize_asset_class
 
 
 STALE_DOCUMENT_DAYS = 365
 MIN_HISTORY_DAYS = 365
+LIMITED_HISTORY_CONCENTRATION_PCT = 20
 
 ISSUE_SEVERITY = {
     "Cost Basis": "Medium",
@@ -66,6 +68,17 @@ def analyze_data_quality(portfolio, history_records=None, as_of_date=None):
     insufficient_history = 0
     complete_documents = 0
     sufficient_history_count = 0
+
+    current_values = [holding.get("current_value") for holding in holdings]
+    values_complete = all(
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+        for value in current_values
+    )
+    total_current_value = sum(current_values) if values_complete else 0
+    weights_available = values_complete and total_current_value > 0
 
     for holding in holdings:
         name = holding.get("name") or "Unknown Holding"
@@ -147,8 +160,15 @@ def analyze_data_quality(portfolio, history_records=None, as_of_date=None):
         if not document_issues:
             complete_documents += 1
 
+        current_value = holding.get("current_value")
+        weight_percentage = (
+            round(current_value / total_current_value * 100, 2)
+            if weights_available else None
+        )
+
         holding_results.append({
             "name": name,
+            "weight_percentage": weight_percentage,
             "history_days": history_days,
             "document_issues": document_issues,
             "history_issues": history_issues,
@@ -214,7 +234,8 @@ def analyze_data_quality(portfolio, history_records=None, as_of_date=None):
         "holdings": holding_results,
         "thresholds": {
             "stale_document_days": STALE_DOCUMENT_DAYS,
-            "minimum_history_days": MIN_HISTORY_DAYS
+            "minimum_history_days": MIN_HISTORY_DAYS,
+            "limited_history_concentration_pct": LIMITED_HISTORY_CONCENTRATION_PCT
         },
         "interpretation": (
             "Document completeness and historical coverage are "
