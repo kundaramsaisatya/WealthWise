@@ -11,6 +11,7 @@ DEFAULT_THRESHOLDS = {
     "max_top_three_pct": MAX_TOP_THREE_CONCENTRATION,
     "min_liquidity_pct": MIN_LIQUIDITY_PERCENTAGE,
     "max_equity_pct": None,
+    "max_sector_pct": None,
 }
 
 LIQUID_SUB_CATEGORIES = {"liquid", "overnight", "money market"}
@@ -28,7 +29,7 @@ def resolve_thresholds(thresholds):
         if key not in DEFAULT_THRESHOLDS:
             raise ValueError(f"Unknown threshold: {key}.")
 
-        if value is None and key == "max_equity_pct":
+        if value is None and key in {"max_equity_pct", "max_sector_pct"}:
             merged[key] = None
             continue
 
@@ -100,6 +101,38 @@ def calculate_allocation(holdings, total_value, field):
     ]
 
 
+def calculate_named_exposure(holdings, total_value, field):
+    """Summarize explicitly identified categories; unknown values are excluded."""
+    values = {}
+    covered_value = 0.0
+    for holding in holdings:
+        label = str(holding.get(field) or "").strip()
+        if not label or label.casefold() in {"unknown", "n/a", "not available", "none"}:
+            continue
+        value = holding["current_value"]
+        values[label] = values.get(label, 0.0) + value
+        covered_value += value
+
+    rows = [
+        {
+            "name": name,
+            "value": round(value, 2),
+            "portfolio_percentage": round(value / total_value * 100, 2),
+            "covered_percentage": round(value / covered_value * 100, 2) if covered_value else None,
+        }
+        for name, value in sorted(values.items(), key=lambda item: item[1], reverse=True)
+    ]
+    weights = [item["portfolio_percentage"] for item in rows]
+    return {
+        "groups": rows,
+        "identified_value": round(covered_value, 2),
+        "coverage_percentage": round(covered_value / total_value * 100, 2),
+        "hhi": round(calculate_hhi(weights), 2) if weights else None,
+        "largest": rows[0] if rows else None,
+        "method": "Identified category values divided by total portfolio value; unidentified holdings are excluded from category groups but remain in the coverage denominator.",
+    }
+
+
 def calculate_portfolio_metrics(portfolio, thresholds=None):
     if not isinstance(portfolio, dict):
         raise ValueError("Invalid portfolio data.")
@@ -151,6 +184,8 @@ def calculate_portfolio_metrics(portfolio, thresholds=None):
 
     asset_allocation = calculate_allocation(validated_holdings, total_value, "asset_class")
     sector_allocation = calculate_allocation(validated_holdings, total_value, "sector")
+    sector_exposure = calculate_named_exposure(validated_holdings, total_value, "sector")
+    issuer_exposure = calculate_named_exposure(validated_holdings, total_value, "issuer")
 
     enriched_holdings = []
     total_invested = 0.0
@@ -267,6 +302,26 @@ def calculate_portfolio_metrics(portfolio, thresholds=None):
             )
         })
 
+    sector_limit = limits.get("max_sector_pct")
+    largest_sector = sector_exposure.get("largest")
+    if (
+        sector_limit is not None
+        and largest_sector
+        and largest_sector["portfolio_percentage"] > sector_limit
+    ):
+        risk_flags.append({
+            "type": "Sector Concentration",
+            "severity": "Medium",
+            "sector": largest_sector["name"],
+            "sector_percentage": largest_sector["portfolio_percentage"],
+            "configured_limit": sector_limit,
+            "message": (
+                f"{largest_sector['name']} represents "
+                f"{largest_sector['portfolio_percentage']}% of the portfolio, "
+                f"above the configured sector limit of {sector_limit}%."
+            ),
+        })
+
     if missing_cost_basis_count:
         risk_flags.append({
             "type": "Data Quality",
@@ -302,6 +357,8 @@ def calculate_portfolio_metrics(portfolio, thresholds=None):
         "holding_count": len(enriched_holdings),
         "asset_allocation": asset_allocation,
         "sector_allocation": sector_allocation,
+        "sector_exposure": sector_exposure,
+        "issuer_exposure": issuer_exposure,
         "largest_holding": {
             "name": largest_holding["name"],
             "value": largest_holding["current_value"],

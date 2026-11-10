@@ -164,6 +164,47 @@ def calculate_transparent_risk_score(portfolio, data_quality, instrument_history
             "rule": RISK_SCORE_RULES["concentration"],
         })
 
+    sector_exposure = portfolio.get("sector_exposure") or {}
+    sector_limit = limits.get("max_sector_pct")
+    largest_sector = sector_exposure.get("largest")
+    if sector_limit is not None and largest_sector and sector_limit > 0:
+        sector_ratio = largest_sector.get("portfolio_percentage", 0) / sector_limit
+        dimensions.append({
+            "id": "sector_concentration",
+            "label": "Sector concentration",
+            "score": _bounded_score(sector_ratio * 50),
+            "status": "scored",
+            "evidence": {
+                "largest_sector": largest_sector.get("name"),
+                "largest_sector_percentage": largest_sector.get("portfolio_percentage"),
+                "configured_limit_percentage": sector_limit,
+                "identified_sector_coverage_percentage": sector_exposure.get("coverage_percentage"),
+            },
+            "rule": "Score 50 at the explicitly configured sector limit and 100 at or above twice that limit; only identified sector values are grouped.",
+        })
+    else:
+        dimensions.append({
+            "id": "sector_concentration",
+            "label": "Sector concentration",
+            "score": None,
+            "status": "not_scored",
+            "reason": "No sector limit is configured or no identified sector exposure is available.",
+        })
+
+    issuer_exposure = portfolio.get("issuer_exposure") or {}
+    dimensions.append({
+        "id": "issuer_exposure",
+        "label": "Issuer exposure",
+        "score": None,
+        "status": "informational_only",
+        "evidence": {
+            "identified_issuer_coverage_percentage": issuer_exposure.get("coverage_percentage"),
+            "largest_identified_issuer": (issuer_exposure.get("largest") or {}).get("name"),
+            "largest_identified_issuer_percentage": (issuer_exposure.get("largest") or {}).get("portfolio_percentage"),
+        },
+        "reason": "Issuer exposure is displayed only when explicit issuer metadata is supplied; it is not scored without a validated issuer taxonomy and thresholds.",
+    })
+
     equity = portfolio.get("equity_percentage")
     equity_limit = limits.get("max_equity_pct")
     if isinstance(equity, (int, float)) and isinstance(equity_limit, (int, float)) and equity_limit > 0:

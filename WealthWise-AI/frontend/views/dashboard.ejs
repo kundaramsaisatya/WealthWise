@@ -133,6 +133,15 @@
         ? safeAnalytics.asset_allocation
         : [];
 
+    const sectorExposure = safeAnalytics?.sector_exposure || null;
+    const issuerExposure = safeAnalytics?.issuer_exposure || null;
+    const sectorExposureGroups = Array.isArray(sectorExposure?.groups)
+        ? sectorExposure.groups
+        : [];
+    const issuerExposureGroups = Array.isArray(issuerExposure?.groups)
+        ? issuerExposure.groups
+        : [];
+
     const getConflictName = item =>
         item?.name ||
         item?.holdingName ||
@@ -846,6 +855,49 @@
                         </details>
                     </div>
                 <% } %>
+
+
+                <!-- SECTOR AND ISSUER EXPOSURE -->
+                <div class="exposure-grid">
+                    <div class="content-card exposure-card">
+                        <div class="card-heading">
+                            <div>
+                                <h3>Sector Exposure</h3>
+                                <p>Identified sector values as a share of the total portfolio.</p>
+                            </div>
+                        </div>
+                        <p class="exposure-coverage">Identified coverage: <%= sectorExposure?.coverage_percentage ?? 0 %>%</p>
+                        <% if (sectorExposureGroups.length) { %>
+                            <% sectorExposureGroups.slice(0, 8).forEach(group => { %>
+                                <div class="exposure-row">
+                                    <div><strong><%= group.name %></strong><span><%= group.portfolio_percentage %>%</span></div>
+                                    <div class="exposure-track"><span style="width: <%= Math.max(0, Math.min(100, group.portfolio_percentage)) %>%"></span></div>
+                                </div>
+                            <% }) %>
+                        <% } else { %>
+                            <p class="muted-text">Sector information is not available in the uploaded holdings.</p>
+                        <% } %>
+                    </div>
+                    <div class="content-card exposure-card">
+                        <div class="card-heading">
+                            <div>
+                                <h3>Issuer Exposure</h3>
+                                <p>Grouped only where explicit issuer metadata is available.</p>
+                            </div>
+                        </div>
+                        <p class="exposure-coverage">Identified coverage: <%= issuerExposure?.coverage_percentage ?? 0 %>%</p>
+                        <% if (issuerExposureGroups.length) { %>
+                            <% issuerExposureGroups.slice(0, 8).forEach(group => { %>
+                                <div class="exposure-row">
+                                    <div><strong><%= group.name %></strong><span><%= group.portfolio_percentage %>%</span></div>
+                                    <div class="exposure-track"><span style="width: <%= Math.max(0, Math.min(100, group.portfolio_percentage)) %>%"></span></div>
+                                </div>
+                            <% }) %>
+                        <% } else { %>
+                            <p class="muted-text">Issuer-level exposure is unavailable because explicit issuer metadata has not been provided.</p>
+                        <% } %>
+                    </div>
+                </div>
 
                 <div class="metric-grid risk-metric-grid">
 

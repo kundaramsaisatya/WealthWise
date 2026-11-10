@@ -16,11 +16,13 @@ The API returns the scoring version, each dimension's inputs, the rule text, cov
 - Equity allocation: when a maximum equity percentage is explicitly configured, score 50 at that limit and 100 at or above twice the limit, with a 0–100 clamp. Without a configured limit, do not score this dimension.
 - Reported liquidity: score the proportional shortfall below the configured minimum. Score zero at or above the minimum and 100 at zero reported liquid allocation.
 - Data quality: subtract the mean of document completeness and historical coverage percentages from 100.
+- Sector concentration: only when an explicit maximum sector percentage is configured, score 50 at that limit and 100 at or above twice the limit. Grouped identified sector values are divided by total portfolio value; missing sector values reduce the reported coverage.
+- Issuer exposure: show identified issuer coverage and largest identified issuer, but do not score it until issuer identifiers, taxonomy and thresholds are validated.
 - Historical volatility: expose the maximum available per-observation volatility as context, but do not include it in the aggregate. Observation intervals are not guaranteed to be uniform, and the metric is not annualized; comparing it directly to a portfolio-wide threshold would be misleading.
 
 ## Known exclusions
 
-The indicator does not currently score sector or issuer concentration, instrument overlap, duration, credit quality, market beta, currency exposure, cash-flow-adjusted returns, or liquidity-at-sale. These require reliable underlying data and separately documented rules.
+The indicator does not automatically score sector concentration unless a sector limit is explicitly configured. Issuer exposure is informational only. Instrument overlap, duration, credit quality, market beta, currency exposure, cash-flow-adjusted returns, and liquidity-at-sale are not scored; these require reliable underlying data and separately documented rules.
 
 ## Interpretation and governance
 

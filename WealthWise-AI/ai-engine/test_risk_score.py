@@ -57,6 +57,25 @@ class TransparentRiskScoreTests(unittest.TestCase):
             1.2,
         )
 
+    def test_sector_score_requires_explicit_limit_and_identified_exposure(self):
+        portfolio, quality, history = self._inputs()
+        portfolio["thresholds"]["max_sector_pct"] = 40
+        portfolio["sector_exposure"] = {
+            "coverage_percentage": 90,
+            "largest": {"name": "Technology", "portfolio_percentage": 50},
+        }
+        portfolio["issuer_exposure"] = {
+            "coverage_percentage": 60,
+            "largest": {"name": "Issuer A", "portfolio_percentage": 60},
+        }
+        result = calculate_transparent_risk_score(portfolio, quality, history)
+        sector = next(x for x in result["dimensions"] if x["id"] == "sector_concentration")
+        issuer = next(x for x in result["dimensions"] if x["id"] == "issuer_exposure")
+        self.assertEqual(sector["score"], 62.5)
+        self.assertEqual(sector["status"], "scored")
+        self.assertEqual(issuer["status"], "informational_only")
+        self.assertIsNone(issuer["score"])
+
     def test_no_available_dimensions_means_no_overall_score(self):
         result = calculate_transparent_risk_score(
             {

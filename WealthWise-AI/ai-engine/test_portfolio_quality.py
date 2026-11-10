@@ -59,6 +59,32 @@ class PortfolioQualityTests(unittest.TestCase):
         self.assertIsNone(result["profit_loss_percentage"])
         self.assertEqual(result["known_invested_value"], 80.0)
 
+    def test_sector_and_issuer_exposure_reports_identified_coverage(self):
+        result = calculate_portfolio_metrics({
+            "client_id": "CLIENT-TEST",
+            "currency": "INR",
+            "holdings": [
+                {"name": "Fund A", "asset_class": "Equity", "sector": "Technology",
+                 "issuer": "Issuer One", "current_value": 60, "invested_value": 50},
+                {"name": "Fund B", "asset_class": "Debt", "sector": "Technology",
+                 "issuer": "Issuer One", "current_value": 20, "invested_value": 20},
+                {"name": "Unknown issuer", "asset_class": "Gold", "sector": "Unknown",
+                 "current_value": 20, "invested_value": 20},
+            ],
+        })
+        self.assertEqual(result["sector_exposure"]["coverage_percentage"], 80.0)
+        self.assertEqual(result["sector_exposure"]["largest"]["name"], "Technology")
+        self.assertEqual(result["sector_exposure"]["largest"]["portfolio_percentage"], 80.0)
+        self.assertEqual(result["issuer_exposure"]["coverage_percentage"], 80.0)
+        self.assertEqual(result["issuer_exposure"]["largest"]["name"], "Issuer One")
+
+    def test_sector_threshold_is_optional_and_validated(self):
+        from portfolio_analytics import resolve_thresholds
+        self.assertIsNone(resolve_thresholds(None)["max_sector_pct"])
+        self.assertEqual(resolve_thresholds({"max_sector_pct": 35})["max_sector_pct"], 35.0)
+        with self.assertRaises(ValueError):
+            resolve_thresholds({"max_sector_pct": 101})
+
     def test_negative_current_value_is_rejected(self):
         portfolio = {
             "client_id": "CLIENT-TEST",
