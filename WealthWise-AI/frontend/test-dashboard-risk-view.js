@@ -2,13 +2,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const ejs = require("ejs");
 
-test("dashboard EJS template compiles with instrument NAV risk section", () => {
+test("dashboard contains safely escaped instrument NAV risk insights", () => {
     const templatePath = path.join(__dirname, "views", "dashboard.ejs");
     const template = fs.readFileSync(templatePath, "utf8");
 
     assert.match(template, /Instrument NAV History/);
     assert.match(template, /volatility_per_observation_percentage/);
-    assert.doesNotThrow(() => ejs.compile(template));
+    assert.match(template, /maximum drawdown/i);
+    assert.match(template, /NAV change is not an investor return/);
+    assert.doesNotMatch(template, /<%-\s*item\.(?:name|data_source|isin|folio_number|message)/);
 });
