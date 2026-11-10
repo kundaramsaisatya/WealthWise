@@ -500,6 +500,7 @@ def build_history_records(client_id: str):
             "name": holding.get("name"),
             "report_date": holding.get("report_date"),
             "current_value": holding.get("current_value"),
+            "nav": holding.get("current_nav"),
         }
         for holding in holdings
     ]
