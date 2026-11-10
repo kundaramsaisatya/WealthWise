@@ -141,7 +141,7 @@ def analyze_portfolio_risk(
         as_of_date=as_of_date
     )
 
-risk_flags = list(portfolio.get("risk_flags", []))
+    risk_flags = list(portfolio.get("risk_flags", []))
 
     # Flag material allocations when the available history is too short
     # to support reliable historical risk estimates.
