@@ -26,7 +26,7 @@ def enrich_history_with_amfi_nav(records, as_of_date=None, fetcher=None):
     holdings_by_isin = {}
     for record in base_records:
         isin = " ".join(str(record.get("isin") or "").upper().split())
-        if isin:
+        if isin.startswith("INF"):
             holdings_by_isin.setdefault(isin, []).append(record)
 
     replacements = {}
@@ -41,8 +41,10 @@ def enrich_history_with_amfi_nav(records, as_of_date=None, fetcher=None):
             "end_date": end_date.isoformat(),
         },
         "note": (
-            "AMFI NAV history is used only when an exact ISIN match is returned. "
-            "Uploaded current values and portfolio valuations are not changed."
+            "Only Indian mutual-fund ISINs beginning with INF are queried. "
+            "AMFI NAV history replaces NAV observations only after an exact ISIN "
+            "match; uploaded current values and portfolio valuations are unchanged. "
+            "Statement history remains available separately for data-quality checks."
         ),
     }
 
