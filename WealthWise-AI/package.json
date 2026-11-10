@@ -21,7 +21,8 @@
     "test:rate-limiter": "node --test frontend/test-rate-limiter.js",
     "test:upload-validation": "python -m unittest discover -s ai-engine -p test_upload_validation.py",
     "test:chat-portfolio": "python -m unittest discover -s ai-engine -p test_chat_portfolio.py",
-    "test:api-error-disclosure": "python -m unittest discover -s ai-engine -p test_api_error_disclosure.py"
+    "test:api-error-disclosure": "python -m unittest discover -s ai-engine -p test_api_error_disclosure.py",
+    "test:instrument-risk": "python -m unittest discover -s ai-engine -p test_instrument_risk.py"
   },
   "keywords": [],
   "author": "",
