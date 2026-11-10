@@ -1154,7 +1154,7 @@ def chat(request: ChatRequest):
 
         raise HTTPException(
             status_code=500,
-            detail=f"Question processing failed: {str(error)}",
+            detail="Question processing failed. Please try again later.",
         )
 
 
@@ -1179,7 +1179,7 @@ def analytics(request: PortfolioRequest):
 
     except Exception as error:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(error))
+        raise HTTPException(status_code=500, detail="Portfolio analytics failed. Please try again later.")
 
 
 # --------------------------------------------------
@@ -1208,7 +1208,7 @@ def consolidated_portfolio(request: PortfolioRequest):
 
     except Exception as error:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(error))
+        raise HTTPException(status_code=500, detail="Portfolio consolidation failed. Please try again later.")
 
 
 # --------------------------------------------------
@@ -1237,7 +1237,7 @@ def risk_analysis(request: PortfolioRequest):
 
     except Exception as error:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(error))
+        raise HTTPException(status_code=500, detail="Risk analysis failed. Please try again later.")
 
 
 @app.post(
@@ -1272,7 +1272,7 @@ def goal_risk_analysis(request: PortfolioRequest):
 
     except Exception as error:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(error))
+        raise HTTPException(status_code=500, detail="Goal risk analysis failed. Please try again later.")
 
 # --------------------------------------------------
 # AI RISK EXPLANATION
@@ -1307,7 +1307,7 @@ def risk_explanation(request: PortfolioRequest):
 
     except Exception as error:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(error))
+        raise HTTPException(status_code=500, detail="Risk explanation failed. Please try again later.")
 
 
 # --------------------------------------------------
