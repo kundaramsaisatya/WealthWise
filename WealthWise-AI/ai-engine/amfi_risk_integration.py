@@ -1,26 +1,54 @@
-"""Enrich statement NAV history with AMFI observations when available.
+"""Enrich statement NAV history with cached, multi-year AMFI observations.
 
-External observations replace statement NAV history only for the matching ISIN
-when AMFI returns data. Folio identity is retained because the same scheme NAV
-applies to each folio, while uploaded current values remain untouched.
+AMFI observations are public scheme-level NAVs. Folio identity is retained for
+analysis, but this data is not a folio-specific investor return.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from amfi_nav import AMFINavProviderError, fetch_amfi_nav_history
+from amfi_nav_cache import AMFINavCache
 
 
-HISTORY_WINDOW_DAYS = 89
+HISTORY_YEARS = 3
+CHUNK_DAYS = 89
+RECENT_CACHE_TTL_HOURS = 24
+MAX_RANGE_FETCHES_PER_ISIN_PER_REQUEST = 2
 
 
-def enrich_history_with_amfi_nav(records, as_of_date=None, fetcher=None):
+def _history_ranges(start_date, end_date):
+    ranges = []
+    cursor = end_date
+    while cursor >= start_date:
+        chunk_start = max(start_date, cursor - timedelta(days=CHUNK_DAYS))
+        ranges.append((chunk_start, cursor))
+        cursor = chunk_start - timedelta(days=1)
+    return ranges
+
+
+def _is_stale(timestamp, now):
+    try:
+        fetched = datetime.fromisoformat(timestamp)
+        if fetched.tzinfo is None:
+            fetched = fetched.replace(tzinfo=timezone.utc)
+        return (now - fetched).total_seconds() >= RECENT_CACHE_TTL_HOURS * 3600
+    except (TypeError, ValueError):
+        return True
+
+
+def enrich_history_with_amfi_nav(
+    records, as_of_date=None, fetcher=None, cache=None, cache_path=None
+):
     if records is None:
         records = []
     if not isinstance(records, list):
         raise ValueError("Instrument history must be a list.")
 
     fetch = fetcher or fetch_amfi_nav_history
+    nav_cache = cache or AMFINavCache(cache_path)
     end_date = as_of_date or date.today()
-    start_date = end_date - timedelta(days=HISTORY_WINDOW_DAYS)
+    start_date = end_date - timedelta(days=365 * HISTORY_YEARS)
+    ranges = _history_ranges(start_date, end_date)
+    now = datetime.now(timezone.utc)
 
     base_records = [record for record in records if isinstance(record, dict)]
     holdings_by_isin = {}
@@ -33,25 +61,67 @@ def enrich_history_with_amfi_nav(records, as_of_date=None, fetcher=None):
     provider_status = {
         "provider": "AMFI India",
         "enabled": True,
+        "history_years_requested": HISTORY_YEARS,
+        "max_range_fetches_per_isin_per_request": MAX_RANGE_FETCHES_PER_ISIN_PER_REQUEST,
         "requested_isin_count": len(holdings_by_isin),
         "matched_isin_count": 0,
         "failed_isins": [],
+        "partially_cached_isins": [],
+        "cache_path_configurable": True,
         "history_window": {
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
         },
         "note": (
-            "Only Indian mutual-fund ISINs beginning with INF are queried. "
-            "AMFI NAV history replaces NAV observations only after an exact ISIN "
-            "match; uploaded current values and portfolio valuations are unchanged. "
-            "Statement history remains available separately for data-quality checks."
+            "AMFI scheme-level NAVs are cached in a local SQLite database. "
+            "Only exact ISIN matches are used. Current holding values and "
+            "portfolio valuations are unchanged. First-time history backfill "
+            "is incremental and may take multiple risk-analysis requests."
         ),
     }
 
     for isin, holdings in holdings_by_isin.items():
         try:
-            observations = fetch(isin, start_date, end_date)
+            completed = nav_cache.get_range_status(isin)
+            pending = []
+            for index, (range_start, range_end) in enumerate(ranges):
+                key = (range_start.isoformat(), range_end.isoformat())
+                fetched_at = completed.get(key)
+                is_latest = index == 0
+                if fetched_at is None or (is_latest and _is_stale(fetched_at, now)):
+                    pending.append((range_start, range_end))
+
+            # Always refresh the newest range when stale, then progressively
+            # backfill one older missing range per request.
+            selected = []
+            if pending:
+                latest = ranges[0]
+                if latest in pending:
+                    selected.append(latest)
+                for item in pending:
+                    if item not in selected and len(selected) < MAX_RANGE_FETCHES_PER_ISIN_PER_REQUEST:
+                        selected.append(item)
+
+            range_failures = False
+            for range_start, range_end in selected:
+                try:
+                    observations = fetch(isin, range_start, range_end)
+                    nav_cache.save_range(isin, range_start, range_end, observations)
+                except (AMFINavProviderError, OSError, TimeoutError, ValueError):
+                    range_failures = True
+
+            completed_after = nav_cache.get_range_status(isin)
+            if len(completed_after) < len(ranges):
+                provider_status["partially_cached_isins"].append(isin)
+
+            observations = nav_cache.get_observations(isin, start_date, end_date)
+            if range_failures:
+                provider_status["failed_isins"].append(isin)
         except (AMFINavProviderError, OSError, TimeoutError, ValueError):
+            provider_status["failed_isins"].append(isin)
+            continue
+        except Exception:
+            # Cache or provider failure must not block portfolio risk analysis.
             provider_status["failed_isins"].append(isin)
             continue
 
@@ -85,5 +155,11 @@ def enrich_history_with_amfi_nav(records, as_of_date=None, fetcher=None):
 
     provider_status["fallback_isin_count"] = (
         len(holdings_by_isin) - provider_status["matched_isin_count"]
+    )
+    provider_status["partial_backfill_count"] = len(
+        provider_status["partially_cached_isins"]
+    )
+    provider_status["cached_observation_count"] = sum(
+        len(items) for items in replacements.values()
     )
     return enriched, provider_status

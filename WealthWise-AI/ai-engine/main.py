@@ -1303,6 +1303,7 @@ def risk_explanation(request: PortfolioRequest):
             history_records=history_records,
             profile=portfolio.get("profile"),
             external_nav_status=nav_provider_status,
+            data_quality_history_records=statement_history_records,
         )
 
         explanation = generate_risk_explanation(risk_data)
