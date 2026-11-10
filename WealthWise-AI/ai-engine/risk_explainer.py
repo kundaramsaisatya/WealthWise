@@ -221,9 +221,15 @@ def build_risk_prompt(risk_data):
     )
 
     # Limitations are decided by code, not by the model.
+    instrument_history = risk_data.get("instrument_history_analysis") or {}
+    instrument_results = instrument_history.get("instruments", [])
+    has_nav_analysis = any(item.get("status") == "success" for item in instrument_results)
+
     limitations_known = [
         "No purchase dates or transaction history",
-        "No NAV or price history, so no volatility or trend analysis",
+        *([] if has_nav_analysis else [
+            "No valid dated NAV history, so instrument-level volatility analysis is unavailable"
+        ]),
         "No benchmark or peer-fund comparison",
         "No news or market data",
         "No industry-sector breakdown",
