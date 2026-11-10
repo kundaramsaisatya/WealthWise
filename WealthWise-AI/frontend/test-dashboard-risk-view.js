@@ -8,6 +8,9 @@ test("dashboard contains safely escaped instrument NAV risk insights", () => {
     const template = fs.readFileSync(templatePath, "utf8");
 
     assert.match(template, /Instrument NAV History/);
+    assert.match(template, /Portfolio Risk Indicator/);
+    assert.match(template, /View calculation evidence/);
+    assert.match(template, /Scoring methodology and limitations/);
     assert.match(template, /volatility_per_observation_percentage/);
     assert.match(template, /maximum drawdown/i);
     assert.match(template, /NAV change is not an investor return/);

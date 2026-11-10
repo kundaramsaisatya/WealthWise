@@ -109,6 +109,11 @@
         ? safeRisk.risk_flags
         : [];
 
+    const transparentRiskScore = safeRisk?.transparent_risk_score || null;
+    const riskScoreDimensions = Array.isArray(transparentRiskScore?.dimensions)
+        ? transparentRiskScore.dimensions
+        : [];
+
     const instrumentRisk = safeRisk?.instrument_history_analysis || null;
     const instrumentRiskRows = Array.isArray(instrumentRisk?.instruments)
         ? instrumentRisk.instruments
@@ -767,6 +772,80 @@
 
 
             <% if (safeRisk) { %>
+
+
+                <!-- TRANSPARENT RISK SCORE -->
+                <% if (transparentRiskScore) { %>
+                    <div class="content-card transparent-risk-score">
+                        <div class="card-heading">
+                            <div>
+                                <h3>Portfolio Risk Indicator</h3>
+                                <p>Illustrative rule-based score with visible evidence and coverage.</p>
+                            </div>
+                            <span class="risk-score-version">Rules v<%= transparentRiskScore.version %></span>
+                        </div>
+
+                        <div class="risk-score-summary">
+                            <div class="risk-score-value">
+                                <% if (transparentRiskScore.score !== null && transparentRiskScore.score !== undefined) { %>
+                                    <span><%= transparentRiskScore.score %></span><small>/ 100</small>
+                                <% } else { %>
+                                    <span>—</span><small>Not scored</small>
+                                <% } %>
+                            </div>
+                            <div class="risk-score-context">
+                                <strong><%= transparentRiskScore.label %></strong>
+                                <p><%= transparentRiskScore.scored_dimension_count %> of <%= transparentRiskScore.total_dimension_count %> dimensions scored · <%= transparentRiskScore.coverage_percentage %>% scoring coverage</p>
+                                <small><%= transparentRiskScore.aggregation_method %></small>
+                            </div>
+                        </div>
+
+                        <div class="risk-dimension-list">
+                            <% riskScoreDimensions.forEach(dimension => { %>
+                                <div class="risk-dimension-row">
+                                    <div class="risk-dimension-heading">
+                                        <strong><%= dimension.label %></strong>
+                                        <% if (dimension.score !== null && dimension.score !== undefined) { %>
+                                            <span><%= dimension.score %> / 100</span>
+                                        <% } else if (dimension.status === "informational_only") { %>
+                                            <span>Informational only</span>
+                                        <% } else { %>
+                                            <span>Not scored</span>
+                                        <% } %>
+                                    </div>
+                                    <% if (dimension.score !== null && dimension.score !== undefined) { %>
+                                        <div class="risk-score-track" role="img" aria-label="<%= dimension.label %> score <%= dimension.score %> out of 100">
+                                            <span style="width: <%= Math.max(0, Math.min(100, dimension.score)) %>%"></span>
+                                        </div>
+                                    <% } %>
+                                    <% if (dimension.reason) { %>
+                                        <p class="risk-dimension-reason"><%= dimension.reason %></p>
+                                    <% } %>
+                                    <% if (dimension.evidence) { %>
+                                        <details class="risk-evidence">
+                                            <summary>View calculation evidence</summary>
+                                            <dl>
+                                                <% Object.entries(dimension.evidence).forEach(([key, value]) => { %>
+                                                    <div><dt><%= key.replace(/_/g, " ") %></dt><dd><%= value === null || value === undefined ? "Unavailable" : value %></dd></div>
+                                                <% }) %>
+                                            </dl>
+                                        </details>
+                                    <% } %>
+                                </div>
+                            <% }) %>
+                        </div>
+
+                        <details class="risk-score-method">
+                            <summary>Scoring methodology and limitations</summary>
+                            <p>Overall score is the unweighted average of available scored dimensions. Unavailable dimensions are excluded, not treated as zero.</p>
+                            <ul>
+                                <% (transparentRiskScore.limitations || []).forEach(note => { %>
+                                    <li><%= note %></li>
+                                <% }) %>
+                            </ul>
+                        </details>
+                    </div>
+                <% } %>
 
                 <div class="metric-grid risk-metric-grid">
 

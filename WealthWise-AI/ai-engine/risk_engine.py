@@ -113,6 +113,185 @@ def resolve_profile(profile):
     return thresholds or None, profile_used
 
 
+
+# Transparent assessment rules. These are product heuristics, not validated
+# financial-industry standards. Scores are intentionally unavailable when
+# the relevant source metric or configured comparison limit is missing.
+RISK_SCORE_RULES = {
+    "version": "1.0",
+    "concentration": "50 points at the configured limit; 100 points at or above twice the limit, using the higher of single-holding and top-three ratios.",
+    "allocation": "50 points at the configured maximum equity allocation; 100 points at or above twice that limit.",
+    "liquidity": "Linear shortfall score: 0 at or above the configured minimum and 100 at zero reported liquid allocation.",
+    "data_quality": "100 minus the mean of document completeness and historical coverage percentages.",
+}
+
+
+def _bounded_score(value):
+    return round(max(0.0, min(100.0, value)), 2)
+
+
+def calculate_transparent_risk_score(portfolio, data_quality, instrument_history):
+    """Return an explainable heuristic score and explicitly report coverage."""
+    dimensions = []
+
+    concentration = portfolio.get("concentration") or {}
+    limits = portfolio.get("thresholds") or {}
+    largest_weight = (portfolio.get("largest_holding") or {}).get("weight_percentage")
+    top_three = concentration.get("top_three_concentration")
+    single_limit = limits.get("max_single_holding_pct")
+    top_three_limit = limits.get("max_top_three_pct")
+
+    concentration_ratios = []
+    if isinstance(largest_weight, (int, float)) and single_limit:
+        concentration_ratios.append(largest_weight / single_limit)
+    if isinstance(top_three, (int, float)) and top_three_limit:
+        concentration_ratios.append(top_three / top_three_limit)
+    if concentration_ratios:
+        ratio = max(concentration_ratios)
+        score = _bounded_score(ratio * 50)
+        dimensions.append({
+            "id": "concentration",
+            "label": "Concentration",
+            "score": score,
+            "status": "scored",
+            "evidence": {
+                "largest_holding_percentage": largest_weight,
+                "single_holding_limit_percentage": single_limit,
+                "top_three_percentage": top_three,
+                "top_three_limit_percentage": top_three_limit,
+                "highest_limit_utilization": round(ratio * 100, 2),
+            },
+            "rule": RISK_SCORE_RULES["concentration"],
+        })
+
+    equity = portfolio.get("equity_percentage")
+    equity_limit = limits.get("max_equity_pct")
+    if isinstance(equity, (int, float)) and isinstance(equity_limit, (int, float)) and equity_limit > 0:
+        ratio = equity / equity_limit
+        dimensions.append({
+            "id": "allocation",
+            "label": "Equity allocation",
+            "score": _bounded_score(ratio * 50),
+            "status": "scored",
+            "evidence": {
+                "equity_percentage": equity,
+                "configured_limit_percentage": equity_limit,
+            },
+            "rule": RISK_SCORE_RULES["allocation"],
+        })
+    else:
+        dimensions.append({
+            "id": "allocation",
+            "label": "Equity allocation",
+            "score": None,
+            "status": "not_scored",
+            "reason": "No configured maximum equity allocation is available; no allocation risk score is inferred.",
+        })
+
+    liquidity = portfolio.get("liquidity") or {}
+    liquid_pct = liquidity.get("percentage")
+    min_liquidity = limits.get("min_liquidity_pct")
+    if isinstance(liquid_pct, (int, float)) and isinstance(min_liquidity, (int, float)) and min_liquidity > 0:
+        shortfall = max(0.0, min_liquidity - liquid_pct)
+        score = _bounded_score(shortfall / min_liquidity * 100)
+        dimensions.append({
+            "id": "liquidity",
+            "label": "Reported liquidity",
+            "score": score,
+            "status": "scored",
+            "evidence": {
+                "reported_liquid_percentage": liquid_pct,
+                "configured_minimum_percentage": min_liquidity,
+                "shortfall_percentage_points": round(shortfall, 2),
+                "liquidity_basis": liquidity.get("basis"),
+            },
+            "rule": RISK_SCORE_RULES["liquidity"],
+        })
+    else:
+        dimensions.append({
+            "id": "liquidity",
+            "label": "Reported liquidity",
+            "score": None,
+            "status": "not_scored",
+            "reason": "Reported liquidity or its configured minimum is unavailable.",
+        })
+
+    document_pct = data_quality.get("document_completeness_percentage")
+    history_pct = data_quality.get("historical_coverage_percentage")
+    if all(isinstance(value, (int, float)) for value in (document_pct, history_pct)):
+        quality = (document_pct + history_pct) / 2
+        dimensions.append({
+            "id": "data_quality",
+            "label": "Data quality",
+            "score": _bounded_score(100 - quality),
+            "status": "scored",
+            "evidence": {
+                "document_completeness_percentage": document_pct,
+                "historical_coverage_percentage": history_pct,
+                "quality_average_percentage": round(quality, 2),
+            },
+            "rule": RISK_SCORE_RULES["data_quality"],
+        })
+    else:
+        dimensions.append({
+            "id": "data_quality",
+            "label": "Data quality",
+            "score": None,
+            "status": "not_scored",
+            "reason": "Document completeness and historical coverage are required.",
+        })
+
+    instruments = (instrument_history or {}).get("instruments", [])
+    usable_volatility = [
+        item.get("volatility_per_observation_percentage")
+        for item in instruments
+        if item.get("volatility_status") == "available"
+        and isinstance(item.get("volatility_per_observation_percentage"), (int, float))
+    ]
+    dimensions.append({
+        "id": "historical_volatility",
+        "label": "Historical volatility",
+        "score": None,
+        "status": "informational_only",
+        "evidence": {
+            "instruments_with_volatility": len(usable_volatility),
+            "highest_volatility_per_observation_percentage": (
+                max(usable_volatility) if usable_volatility else None
+            ),
+        },
+        "reason": (
+            "Volatility is shown as an observation-level statistic, not scored: "
+            "observation frequency and instrument risk characteristics are not "
+            "standardized sufficiently for a comparable portfolio score."
+        ),
+    })
+
+    scored = [item for item in dimensions if item["status"] == "scored"]
+    score = round(sum(item["score"] for item in scored) / len(scored), 2) if scored else None
+    return {
+        "version": RISK_SCORE_RULES["version"],
+        "score": score,
+        "label": (
+            "Illustrative risk indicator" if score is not None
+            else "Insufficient evidence"
+        ),
+        "status": "available" if score is not None else "insufficient_data",
+        "scored_dimension_count": len(scored),
+        "total_dimension_count": len(dimensions),
+        "coverage_percentage": round(len(scored) / len(dimensions) * 100, 2),
+        "dimensions": dimensions,
+        "aggregation_method": "Unweighted arithmetic mean of available dimension scores; unavailable dimensions are excluded and shown explicitly.",
+        "rules": RISK_SCORE_RULES,
+        "limitations": [
+            "This is an illustrative heuristic, not a validated industry score, credit rating, forecast or suitability assessment.",
+            "The score depends on configured portfolio thresholds and the supplied data; changing either can change the result.",
+            "Historical volatility is not included in the aggregate because observation frequencies may differ and values are not annualized.",
+            "Sector, issuer, duration, credit and instrument overlap risks are not scored unless reliable source data and explicit rules are added.",
+            "A higher score indicates more threshold pressure or weaker data quality under these rules; it does not predict loss probability.",
+        ],
+    }
+
+
 def analyze_portfolio_risk(
     portfolio_data,
     history_records=None,
@@ -214,7 +393,14 @@ def analyze_portfolio_risk(
             )
         })
 
+    transparent_risk_score = calculate_transparent_risk_score(
+        portfolio,
+        data_quality,
+        instrument_history_analysis
+    )
+
     return {
+        "transparent_risk_score": transparent_risk_score,
         "client_id": portfolio.get("client_id"),
         "currency": portfolio.get("currency"),
         "total_value": portfolio.get("total_value"),
