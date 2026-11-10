@@ -12,6 +12,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import (
     FastAPI,
+    BackgroundTasks,
     UploadFile,
     File,
     Form,
@@ -1221,12 +1222,20 @@ def consolidated_portfolio(request: PortfolioRequest):
     "/risk",
     dependencies=[Depends(verify_service_secret)],
 )
-def risk_analysis(request: PortfolioRequest):
+def risk_analysis(request: PortfolioRequest, background_tasks: BackgroundTasks):
     try:
         portfolio = build_portfolio_for_analysis(request)
 
         statement_history_records = build_history_records(request.client_id)
-        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(
+            statement_history_records,
+            fetch_missing=False,
+        )
+        if nav_provider_status.get("backfill_pending"):
+            background_tasks.add_task(
+                enrich_history_with_amfi_nav,
+                statement_history_records,
+            )
         return analyze_portfolio_risk(
             portfolio,
             history_records=history_records,
@@ -1250,7 +1259,7 @@ def risk_analysis(request: PortfolioRequest):
     "/risk/goal",
     dependencies=[Depends(verify_service_secret)],
 )
-def goal_risk_analysis(request: PortfolioRequest):
+def goal_risk_analysis(request: PortfolioRequest, background_tasks: BackgroundTasks):
     try:
         validate_client_id(request.client_id)
 
@@ -1265,7 +1274,15 @@ def goal_risk_analysis(request: PortfolioRequest):
             )
 
         statement_history_records = build_history_records(request.client_id)
-        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(
+            statement_history_records,
+            fetch_missing=False,
+        )
+        if nav_provider_status.get("backfill_pending"):
+            background_tasks.add_task(
+                enrich_history_with_amfi_nav,
+                statement_history_records,
+            )
         return analyze_portfolio_risk(
             portfolio,
             history_records=history_records,
@@ -1292,12 +1309,20 @@ def goal_risk_analysis(request: PortfolioRequest):
     "/risk/explanation",
     dependencies=[Depends(verify_service_secret)],
 )
-def risk_explanation(request: PortfolioRequest):
+def risk_explanation(request: PortfolioRequest, background_tasks: BackgroundTasks):
     try:
         portfolio = build_portfolio_for_analysis(request)
 
         statement_history_records = build_history_records(request.client_id)
-        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(
+            statement_history_records,
+            fetch_missing=False,
+        )
+        if nav_provider_status.get("backfill_pending"):
+            background_tasks.add_task(
+                enrich_history_with_amfi_nav,
+                statement_history_records,
+            )
         risk_data = analyze_portfolio_risk(
             portfolio,
             history_records=history_records,
