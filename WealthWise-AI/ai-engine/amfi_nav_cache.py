@@ -2,6 +2,7 @@
 import json
 import os
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,10 +19,18 @@ class AMFINavCache:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialise()
 
+    @contextmanager
     def _connect(self):
         connection = sqlite3.connect(str(self.path), timeout=15)
-        connection.execute("PRAGMA busy_timeout = 15000")
-        return connection
+        try:
+            connection.execute("PRAGMA busy_timeout = 15000")
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def _initialise(self):
         with self._connect() as db:
