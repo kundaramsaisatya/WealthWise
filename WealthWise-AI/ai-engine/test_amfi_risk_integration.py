@@ -102,7 +102,8 @@ class AMFIRiskIntegrationTests(unittest.TestCase):
         enrich_history_with_amfi_nav(
             records, as_of_date=date(2026, 4, 10), fetcher=fetcher, cache=cache
         )
-        self.assertEqual(len(calls), first_count)
+        self.assertEqual(len(calls), first_count + 1)
+        self.assertNotEqual(calls[-1], calls[0])
 
     def test_long_history_is_split_into_amfi_compatible_ranges(self):
         from amfi_risk_integration import _history_ranges
