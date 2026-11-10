@@ -7,7 +7,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "npm run test:api-error-disclosure && npm run test:instrument-risk && npm run test:chat-portfolio && npm run test:upload-validation && npm run test:account-holder && npm run test:portfolio-quality && npm run test:financial-engines && npm run test:account-holder-isolation && npm run test:account-holder-selection && npm run test:portfolio-reconciliation && npm run test:excel-currency && npm run test:security && npm run test:rate-limiter && npm run test:amfi-nav && npm run test:amfi-risk-integration && npm run test:amfi-nav-cache",
+    "test": "npm run test:api-error-disclosure && npm run test:instrument-risk && npm run test:chat-portfolio && npm run test:upload-validation && npm run test:account-holder && npm run test:portfolio-quality && npm run test:financial-engines && npm run test:account-holder-isolation && npm run test:account-holder-selection && npm run test:portfolio-reconciliation && npm run test:excel-currency && npm run test:security && npm run test:rate-limiter && npm run test:amfi-nav && npm run test:amfi-risk-integration && npm run test:amfi-nav-cache && npm run test:dashboard-risk-view",
     "start": "node frontend/server.js",
     "dev": "nodemon frontend/server.js",
     "test:account-holder": "python -m unittest discover -s ai-engine -p test_account_holder.py",
@@ -25,7 +25,8 @@
     "test:instrument-risk": "python -m unittest discover -s ai-engine -p test_instrument_risk.py",
     "test:amfi-nav": "python -m unittest discover -s ai-engine -p test_amfi_nav.py",
     "test:amfi-risk-integration": "python -m unittest discover -s ai-engine -p test_amfi_risk_integration.py",
-    "test:amfi-nav-cache": "python -m unittest discover -s ai-engine -p test_amfi_nav_cache.py"
+    "test:amfi-nav-cache": "python -m unittest discover -s ai-engine -p test_amfi_nav_cache.py",
+    "test:dashboard-risk-view": "node --test frontend/test-dashboard-risk-view.js"
   },
   "keywords": [],
   "author": "",
