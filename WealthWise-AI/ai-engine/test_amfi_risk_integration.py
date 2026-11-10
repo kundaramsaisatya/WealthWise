@@ -1,5 +1,5 @@
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 
 from amfi_risk_integration import (
     HISTORY_YEARS,
@@ -17,7 +17,7 @@ class FakeCache:
         return self.ranges.get(isin, {}).copy()
 
     def save_range(self, isin, start, end, observations):
-        self.ranges.setdefault(isin, {})[(start.isoformat(), end.isoformat())] = "2026-04-10T00:00:00+00:00"
+        self.ranges.setdefault(isin, {})[(start.isoformat(), end.isoformat())] = datetime.now(timezone.utc).isoformat()
         self.observations.setdefault(isin, {}).update({
             (item["scheme_code"], item["date"]): item for item in observations
         })
