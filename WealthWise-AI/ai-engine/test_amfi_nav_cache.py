@@ -1,8 +1,11 @@
+import os
 import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
+from unittest.mock import patch
 
-from amfi_nav_cache import AMFINavCache
+from amfi_nav_cache import AMFINavCache, get_default_cache_path
 
 
 class AMFINavCacheTests(unittest.TestCase):
@@ -31,6 +34,14 @@ class AMFINavCacheTests(unittest.TestCase):
                 ("2026-01-01", "2026-01-10"),
                 reopened.get_range_status("INF000000001"),
             )
+
+    def test_default_cache_uses_configured_data_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.dict(os.environ, {"WEALTHWISE_DATA_DIR": folder}):
+                self.assertEqual(
+                    get_default_cache_path(),
+                    Path(folder) / "amfi_nav_cache.sqlite3",
+                )
 
     def test_cache_isolated_by_isin(self):
         with tempfile.TemporaryDirectory() as folder:
