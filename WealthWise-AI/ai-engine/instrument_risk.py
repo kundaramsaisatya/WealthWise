@@ -66,6 +66,7 @@ def analyze_instrument_nav_history(records):
             "name": name,
             "isin": isin or None,
             "folio_number": folio or None,
+            "data_source": record.get("data_source") or "uploaded_statement",
         })
 
     results = []
@@ -86,6 +87,7 @@ def analyze_instrument_nav_history(records):
                 "name": observations[0]["name"],
                 "isin": observations[0]["isin"],
                 "folio_number": observations[0]["folio_number"],
+                "data_source": observations[0]["data_source"],
                 "status": "ambiguous_data",
                 "observation_count": len(by_date),
                 "rejected_observation_count": rejected,
@@ -114,6 +116,7 @@ def analyze_instrument_nav_history(records):
             "name": observations[0]["name"],
             "isin": observations[0]["isin"],
             "folio_number": observations[0]["folio_number"],
+            "data_source": observations[0]["data_source"],
             "status": "success" if len(nav_values) >= 2 else "insufficient_data",
             "observation_count": len(nav_values),
             "first_observation_date": clean[0][0].isoformat() if clean else None,
@@ -141,7 +144,7 @@ def analyze_instrument_nav_history(records):
         })
 
     return {
-        "method": "Dated NAV observations; no external market data is fetched.",
+        "method": "Dated NAV observations from uploaded statements and explicitly identified external sources.",
         "minimum_observations_for_volatility": MIN_OBSERVATIONS_FOR_VOLATILITY,
         "instrument_count": len(results),
         "rejected_observation_count": rejected,
