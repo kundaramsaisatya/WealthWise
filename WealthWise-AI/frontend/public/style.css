@@ -1977,3 +1977,32 @@ td, th { line-height: 1.5; }
 .back-link { display: block; text-align: center; margin-top: 20px; color: var(--primary); text-decoration: none; font-size: 12px; font-weight: 650; }
 .back-link:hover { text-decoration: underline; }
 .profile-card .disclaimer { margin-top: 22px; padding: 13px; background: var(--surface-soft); border-radius: var(--ww-radius-sm); color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+
+
+/* Instrument-level NAV history on the risk dashboard */
+.instrument-risk-card { margin-top: 20px; }
+.instrument-risk-table { width: 100%; overflow-x: auto; }
+.instrument-risk-table table { width: 100%; }
+.instrument-risk-table td { vertical-align: top; }
+.instrument-risk-table .investment-name small {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 11px;
+    margin-top: 3px;
+}
+.instrument-risk-limitations {
+    margin: 12px 0;
+    padding-left: 20px;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+.instrument-risk-limitations li { margin: 4px 0; }
+.instrument-risk-card .muted-text {
+    margin-top: 12px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.6;
+}
+@media (max-width: 700px) {
+    .instrument-risk-table table { min-width: 850px; }
+}
