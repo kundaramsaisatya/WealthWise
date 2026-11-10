@@ -507,13 +507,6 @@ def build_history_records(client_id: str):
     ]
 
 
-
-def build_enriched_history_records(client_id: str):
-    """Build account-holder-scoped history and enrich eligible funds via AMFI."""
-    statement_records = build_history_records(client_id)
-    return enrich_history_with_amfi_nav(statement_records)
-
-
 def build_portfolio_for_analysis(request):
     """Prefer the client's latest saved report; fall back to posted holdings."""
     validate_client_id(request.client_id)
@@ -1271,12 +1264,14 @@ def goal_risk_analysis(request: PortfolioRequest):
                 detail="No allocated goal holdings supplied.",
             )
 
-        history_records, nav_provider_status = build_enriched_history_records(request.client_id)
+        statement_history_records = build_history_records(request.client_id)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
         return analyze_portfolio_risk(
             portfolio,
             history_records=history_records,
             profile=request.profile,
             external_nav_status=nav_provider_status,
+            data_quality_history_records=statement_history_records,
         )
 
     except HTTPException:
