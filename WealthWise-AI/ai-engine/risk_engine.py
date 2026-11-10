@@ -1,6 +1,7 @@
 from math import isfinite
 
 from portfolio_analytics import calculate_portfolio_metrics
+from instrument_risk import analyze_instrument_nav_history
 from data_quality import (
     analyze_data_quality,
     LIMITED_HISTORY_CONCENTRATION_PCT,
@@ -140,6 +141,7 @@ def analyze_portfolio_risk(
         history_records=history_records,
         as_of_date=as_of_date
     )
+    instrument_history_analysis = analyze_instrument_nav_history(history_records)
 
     risk_flags = list(portfolio.get("risk_flags", []))
 
@@ -227,6 +229,7 @@ def analyze_portfolio_risk(
         "thresholds": portfolio.get("thresholds", {}),
         "profile_used": profile_used,
         "data_quality": data_quality,
+        "instrument_history_analysis": instrument_history_analysis,
         "consolidation": (
             portfolio_data.get("consolidation")
             if isinstance(portfolio_data, dict) else None
