@@ -4,7 +4,7 @@ import unittest
 from data_quality import analyze_data_quality
 from performance_engine import calculate_portfolio_performance
 from portfolio_analytics import resolve_thresholds
-from risk_engine import resolve_profile
+from risk_engine import analyze_portfolio_risk, resolve_profile
 
 
 class PerformanceEngineTests(unittest.TestCase):
@@ -163,6 +163,77 @@ class DataQualityTests(unittest.TestCase):
         self.assertEqual(result["historical_coverage_percentage"], 50.0)
         self.assertEqual(result["holdings"][0]["history_status"], "Sufficient")
         self.assertEqual(result["holdings"][1]["history_status"], "Insufficient History")
+
+
+
+class LimitedHistoryConcentrationTests(unittest.TestCase):
+
+    def _portfolio(self, new_value):
+        return {
+            "client_id": "CLIENT-TEST",
+            "currency": "INR",
+            "holdings": [
+                {
+                    "name": "New Instrument",
+                    "isin": "INF000000001",
+                    "asset_class": "Equity",
+                    "sector": "Technology",
+                    "current_value": new_value,
+                    "invested_value": new_value,
+                    "report_date": "2026-11-09",
+                },
+                {
+                    "name": "Established Holding",
+                    "isin": "INF000000002",
+                    "asset_class": "Debt",
+                    "sector": "Debt",
+                    "current_value": 100 - new_value,
+                    "invested_value": 100 - new_value,
+                    "report_date": "2026-11-09",
+                },
+            ],
+        }
+
+    def _analyze(self, new_value):
+        return analyze_portfolio_risk(
+            self._portfolio(new_value),
+            history_records=[
+                {"isin": "INF000000001", "date": "2026-11-09"},
+                {"isin": "INF000000002", "date": "2025-01-01"},
+                {"isin": "INF000000002", "date": "2026-11-09"},
+            ],
+            as_of_date="2026-11-09",
+        )
+
+    def test_large_holding_with_insufficient_history_gets_uncertainty_flag(self):
+        result = self._analyze(30)
+        flag = next(
+            item for item in result["risk_flags"]
+            if item["type"] == "Limited-History Concentration"
+        )
+        self.assertEqual(flag["holding_name"], "New Instrument")
+        self.assertEqual(flag["holding_percentage"], 30.0)
+        self.assertEqual(flag["severity"], "Medium")
+        self.assertEqual(flag["configured_limit"], 20)
+
+    def test_small_holding_with_insufficient_history_does_not_get_flag(self):
+        result = self._analyze(10)
+        self.assertFalse(any(
+            item["type"] == "Limited-History Concentration"
+            for item in result["risk_flags"]
+        ))
+
+    def test_weights_are_not_reported_when_any_current_value_is_missing(self):
+        from data_quality import analyze_data_quality
+
+        result = analyze_data_quality({
+            "holdings": [
+                {"name": "Known", "current_value": 100},
+                {"name": "Unknown", "current_value": None},
+            ]
+        }, as_of_date="2026-11-09")
+        self.assertIsNone(result["holdings"][0]["weight_percentage"])
+        self.assertIsNone(result["holdings"][1]["weight_percentage"])
 
 
 if __name__ == "__main__":
