@@ -1232,12 +1232,14 @@ def risk_analysis(request: PortfolioRequest):
     try:
         portfolio = build_portfolio_for_analysis(request)
 
-        history_records, nav_provider_status = build_enriched_history_records(request.client_id)
+        statement_history_records = build_history_records(request.client_id)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
         return analyze_portfolio_risk(
             portfolio,
             history_records=history_records,
             profile=portfolio.get("profile"),
             external_nav_status=nav_provider_status,
+            data_quality_history_records=statement_history_records,
         )
 
     except HTTPException:
@@ -1299,7 +1301,8 @@ def risk_explanation(request: PortfolioRequest):
     try:
         portfolio = build_portfolio_for_analysis(request)
 
-        history_records, nav_provider_status = build_enriched_history_records(request.client_id)
+        statement_history_records = build_history_records(request.client_id)
+        history_records, nav_provider_status = enrich_history_with_amfi_nav(statement_history_records)
         risk_data = analyze_portfolio_risk(
             portfolio,
             history_records=history_records,
